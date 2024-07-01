@@ -1,5 +1,7 @@
 FROM nvcr.io/nvidia/pytorch:23.10-py3
 
+COPY plan_generator /plan_generator
+
 COPY requirements.txt /requirements.txt
 COPY post-create-command.sh /post-create-command.sh
 
