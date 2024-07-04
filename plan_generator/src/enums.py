@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, auto
 
 
 class Labels(Enum):
@@ -28,8 +28,42 @@ class Labels(Enum):
     INTERIOR_DOOR = 17
 
 
+class LabelsNew(Enum):
+    LIVING_ROOM = 1
+    MASTER_ROOM = auto()
+    KITCHEN = auto()
+    BATHROOM = auto()
+    DINING_ROOM = auto()
+    CHILD_ROOM = auto()
+    STUDY_ROOM = auto()
+    SECOND_ROOM = auto()
+    GUEST_ROOM = auto()
+    BALCONY = auto()
+    STORAGE = auto()
+    WALL = auto()
+
+    NUM_CLASSES = WALL
+
+    CLASS_MAP = {
+        Labels.LIVING_ROOM.value: LIVING_ROOM,
+        Labels.MASTER_ROOM.value: MASTER_ROOM,
+        Labels.KITCHEN.value: KITCHEN,
+        Labels.BATHROOM.value: BATHROOM,
+        Labels.DINING_ROOM.value: DINING_ROOM,
+        Labels.CHILD_ROOM.value: CHILD_ROOM,
+        Labels.STUDY_ROOM.value: STUDY_ROOM,
+        Labels.SECOND_ROOM.value: SECOND_ROOM,
+        Labels.GUEST_ROOM.value: GUEST_ROOM,
+        Labels.BALCONY.value: BALCONY,
+        Labels.STORAGE.value: STORAGE,
+    }
+
+
 class Colors(Enum):
     """Colors for rgb"""
+
+    WHITE = (255, 255, 255)
+    BLACK = (0, 0, 0)
 
     RED = (255, 0, 0)
     GREEN = (0, 255, 0)
@@ -39,12 +73,20 @@ class Colors(Enum):
     MAGENTA = (255, 0, 255)
     ORANGE = (255, 165, 0)
     PURPLE = (128, 0, 128)
-    LIME = (0, 255, 0)
     PINK = (255, 192, 203)
-    TEAL = (0, 128, 128)
-    LAVENDER = (230, 230, 250)
     BROWN = (165, 42, 42)
-    MAROON = (128, 0, 0)
-    OLIVE = (128, 128, 0)
-    NAVY = (0, 0, 128)
     GRAY = (128, 128, 128)
+
+    COLOR_MAP = {
+        Labels.LIVING_ROOM.value: GREEN,
+        Labels.MASTER_ROOM.value: BLUE,
+        Labels.KITCHEN.value: RED,
+        Labels.BATHROOM.value: PURPLE,
+        Labels.DINING_ROOM.value: YELLOW,
+        Labels.CHILD_ROOM.value: ORANGE,
+        Labels.STUDY_ROOM.value: MAGENTA,
+        Labels.SECOND_ROOM.value: BROWN,
+        Labels.GUEST_ROOM.value: BLUE,
+        Labels.BALCONY.value: PINK,
+        Labels.STORAGE.value: GRAY,
+    }
