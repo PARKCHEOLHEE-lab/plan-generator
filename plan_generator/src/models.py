@@ -65,8 +65,25 @@ class WallGenerator(UNet, nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__(in_channels, out_channels)
 
+        self.fc = nn.Sequential(
+            nn.Linear(256 * 256, 512),
+            nn.ReLU(True),
+            nn.Linear(512, 256),
+            nn.ReLU(True),
+            nn.Linear(256, 256),
+            nn.ReLU(True),
+            nn.Linear(256, 512),
+            nn.ReLU(True),
+            nn.Linear(512, 256 * 256),
+            nn.ReLU(True),
+        )
+
+        self.to("cuda")
+
     def forward(self, floor):
-        return super().forward(floor)
+        encoded = self.fc(floor.reshape(-1, 256 * 256)).reshape(1, 1, 256, 256)
+
+        return torch.sigmoid(super().forward(encoded))
 
 
 class WallDiscriminator(nn.Module):
