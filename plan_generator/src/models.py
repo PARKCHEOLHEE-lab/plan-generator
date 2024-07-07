@@ -5,11 +5,11 @@ from torch.nn import functional
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+
         self.in_channels = in_channels
         self.out_channels = out_channels
-
-        super().__init__()
 
         self.encoding_1 = self.encode(self.in_channels, 32)
         self.encoding_2 = self.encode(32, 64)
@@ -61,34 +61,82 @@ class UNet(nn.Module):
         return decoded_6
 
 
+class FCEncoder(nn.Module):
+    def __init__(self, in_features: int, first_out_features: int, repeat: int):
+        super().__init__()
+
+        self.in_features = in_features
+        self.first_out_features = first_out_features
+        self.repeat = repeat
+
+        modules = []
+        modules.extend(
+            [
+                nn.Linear(in_features, first_out_features),
+                nn.ReLU(True),
+            ]
+        )
+
+        temp_out_features = first_out_features
+        for _ in range(repeat // 2):
+            if temp_out_features // 2 == 0:
+                break
+
+            modules.extend(
+                [
+                    nn.Linear(temp_out_features, temp_out_features // 2),
+                    nn.ReLU(True),
+                ]
+            )
+
+            temp_out_features //= 2
+
+        for _ in range(repeat // 2):
+            modules.extend(
+                [
+                    nn.Linear(temp_out_features, temp_out_features * 2),
+                    nn.ReLU(True),
+                ]
+            )
+
+            temp_out_features *= 2
+
+        modules.extend(
+            [
+                nn.Linear(temp_out_features, in_features),
+                nn.ReLU(True),
+            ]
+        )
+
+        self.fc = nn.Sequential(*modules)
+
+    def forward(self, x):
+        return self.fc(x)
+
+
 class WallGenerator(UNet, nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels: int, out_channels: int):
         super().__init__(in_channels, out_channels)
 
-        self.fc = nn.Sequential(
-            nn.Linear(256 * 256, 512),
-            nn.ReLU(True),
-            nn.Linear(512, 256),
-            nn.ReLU(True),
-            nn.Linear(256, 256),
-            nn.ReLU(True),
-            nn.Linear(256, 512),
-            nn.ReLU(True),
-            nn.Linear(512, 256 * 256),
-            nn.ReLU(True),
-        )
+        self.fc = FCEncoder(256 * 256, 512, 5)
 
         self.to("cuda")
 
     def forward(self, floor):
         encoded = self.fc(floor.reshape(-1, 256 * 256)).reshape(1, 1, 256, 256)
+        decoded = super().forward(encoded)
 
-        return torch.sigmoid(super().forward(encoded))
+        return torch.sigmoid(decoded)
 
 
-class WallDiscriminator(nn.Module):
-    def __init__(self):
-        super().__init__()
+class RoomAllocator(UNet, nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__(in_channels, out_channels)
 
-    def forward(self):
-        return
+        self.fc = FCEncoder(256 * 256, 512, 5)
+
+    def forward(self, walls):
+        encoded = self.fc(walls.reshape(-1, 256 * 256)).reshape(1, 1, 256, 256)
+        decoded = super().forward(encoded)
+
+        return torch.sigmoid(decoded)
