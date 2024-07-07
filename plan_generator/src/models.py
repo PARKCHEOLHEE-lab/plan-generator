@@ -135,6 +135,8 @@ class RoomAllocator(UNet, nn.Module):
 
         self.fc = FCEncoder(256 * 256, 512, 5)
 
+        self.to("cuda")
+
     def forward(self, walls):
         encoded = self.fc(walls.reshape(-1, 256 * 256)).reshape(1, 1, 256, 256)
         decoded = super().forward(encoded)
