@@ -6,29 +6,28 @@ from torch.nn import functional
 
 
 class UNet(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, filters: List[int]):
+    def __init__(self, in_channels: int, out_channels: int, steps: List[int]):
         super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.filters = filters
+        self.steps = steps
 
         self.encoders = nn.ModuleList([])
-        self.encoders += [self.encode(self.in_channels, self.filters[0])]
-        self.encoders += [self.encode(self.filters[i], self.filters[i + 1]) for i in range(len(filters) - 1)]
+        self.encoders += [self.encode(self.in_channels, self.steps[0])]
+        self.encoders += [self.encode(self.steps[i], self.steps[i + 1]) for i in range(len(steps) - 1)]
 
         self.upconvs = nn.ModuleList([])
         self.upconvs += [
-            nn.ConvTranspose2d(filters[i], filters[i - 1], kernel_size=2, stride=2)
-            for i in range(len(filters) - 1, 0, -1)
+            nn.ConvTranspose2d(steps[i], steps[i - 1], kernel_size=2, stride=2) for i in range(len(steps) - 1, 0, -1)
         ]
 
         self.decoders = nn.ModuleList([])
         self.decoders += [
-            nn.Conv2d(filters[i], filters[i - 1], kernel_size=3, padding=1) for i in range(len(filters) - 1, 0, -1)
+            nn.Conv2d(steps[i], steps[i - 1], kernel_size=3, padding=1) for i in range(len(steps) - 1, 0, -1)
         ]
 
-        self.decoders += [nn.Conv2d(filters[0], out_channels, kernel_size=1)]
+        self.decoders += [nn.Conv2d(steps[0], out_channels, kernel_size=1)]
 
         self.to("cuda")
 
@@ -92,8 +91,8 @@ class FCEncoder(nn.Module):
 
 
 class WallGenerator(UNet):
-    def __init__(self, in_channels: int, out_channels: int, filters: List[int], size: int, repeat: int):
-        super().__init__(in_channels, out_channels, filters)
+    def __init__(self, in_channels: int, out_channels: int, steps: List[int], size: int, repeat: int):
+        super().__init__(in_channels, out_channels, steps)
 
         self.size = size
         self.repeat = repeat
@@ -109,8 +108,8 @@ class WallGenerator(UNet):
 
 
 class RoomAllocator(UNet):
-    def __init__(self, in_channels: int, out_channels: int, filters: List[int], size: int, repeat: int):
-        super().__init__(in_channels, out_channels, filters)
+    def __init__(self, in_channels: int, out_channels: int, steps: List[int], size: int, repeat: int):
+        super().__init__(in_channels, out_channels, steps)
 
         self.size = size
         self.repeat = repeat
