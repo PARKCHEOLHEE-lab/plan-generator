@@ -2,7 +2,7 @@ from enum import Enum, auto
 
 
 class LabelsOld(Enum):
-    """Channel labels"""
+    """Channel labels, from `plan_generator/data/label.xlsx`"""
 
     EXTERIOR_WALL_1 = 127
     MAIN_ENTRANCE = 255
