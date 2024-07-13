@@ -1,8 +1,13 @@
+import os
+import sys
+
+if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
+    sys.path.append(os.path.abspath(os.path.join(__file__, "../../../")))
+
 import torch
 
 from torch import nn
 from typing import List
-from torch.nn import functional
 
 
 class UNet(nn.Module):
@@ -46,7 +51,7 @@ class UNet(nn.Module):
         for eci, encoder in enumerate(self.encoders):
             x = encoder(x)
             if eci != 0:
-                x = functional.max_pool2d(x, kernel_size=2)
+                x = nn.functional.max_pool2d(x, kernel_size=2)
 
             encoded.append(x)
 
@@ -122,3 +127,29 @@ class RoomAllocator(UNet):
         decoded = super().forward(encoded)
 
         return decoded
+
+
+class DiceLoss(nn.Module):
+    def __init__(self, epsilon: float = 1e-6):
+        super().__init__()
+
+        self.epsilon = epsilon
+
+    def forward(self, y_hat: torch.Tensor, y: torch.Tensor, softmax: bool = True) -> torch.Tensor:
+        y_one_hot = torch.zeros_like(y_hat).scatter(1, y.unsqueeze(1), 1)
+
+        if softmax:
+            y_hat = nn.functional.softmax(y_hat, dim=1)
+
+        batch_size = y.shape[0]
+
+        y_flattened = y_one_hot.reshape(batch_size, -1)
+        y_hat_flattened = y_hat.reshape(batch_size, -1)
+
+        intersection = (y_flattened * y_hat_flattened).sum(dim=1)
+        union = y_flattened.sum(dim=1) + y_hat_flattened.sum(dim=1)
+
+        dice = (2 * intersection) / (union + self.epsilon)
+        loss = 1 - dice
+
+        return loss.mean()
