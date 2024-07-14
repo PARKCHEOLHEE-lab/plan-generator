@@ -23,13 +23,13 @@ class PlanDataCreatorHelper:
 
     @staticmethod
     def read_original_image(image_path: str) -> np.ndarray:
-        """_summary_
+        """Read raw image data
 
         Args:
-            image_path (str): _description_
+            image_path (str): image path
 
         Returns:
-            np.ndarray: _description_
+            np.ndarray: original image data
         """
 
         original_image = None
@@ -124,8 +124,81 @@ class PlanDataCreatorHelper:
 
         return processed
 
+    @staticmethod
+    def process_mirroring(data: dict) -> List[Dict]:
+        """Mirror data horzontally and vertically
+
+        Args:
+            data (dict): processed data
+
+        Returns:
+            List[Dict]: mirrored data
+        """
+
+        mirrored = []
+
+        floor = data["floor"]
+        walls = data["walls"]
+        rooms = data["rooms"]
+
+        mirrored_floor_vertically = floor.flip(2)
+        mirrored_walls_vertically = walls.flip(2)
+        mirrored_rooms_vertically = rooms.flip(2)
+        mirrored.append(
+            {
+                "floor": mirrored_floor_vertically,
+                "walls": mirrored_walls_vertically,
+                "rooms": mirrored_rooms_vertically,
+            }
+        )
+
+        mirrored_floor_horizontally = floor.flip(1)
+        mirrored_walls_horizontally = walls.flip(1)
+        mirrored_rooms_horizontally = rooms.flip(1)
+        mirrored.append(
+            {
+                "floor": mirrored_floor_horizontally,
+                "walls": mirrored_walls_horizontally,
+                "rooms": mirrored_rooms_horizontally,
+            }
+        )
+
+        return mirrored
+
+    @staticmethod
+    def process_rotating(data: dict) -> List[Dict]:
+        """Rotate data 90, 180, and 270 degrees
+
+        Args:
+            data (dict): processed data
+
+        Returns:
+            List[Dict]: rotated data
+        """
+
+        rotated = []
+
+        floor = data["floor"]
+        walls = data["walls"]
+        rooms = data["rooms"]
+
+        for time in range(1, 4):
+            rotated_floor = torch.rot90(floor, time, dims=(1, 2))
+            rotated_walls = torch.rot90(walls, time, dims=(1, 2))
+            rotated_rooms = torch.rot90(rooms, time, dims=(1, 2))
+
+            rotated.append(
+                {
+                    "floor": rotated_floor,
+                    "walls": rotated_walls,
+                    "rooms": rotated_rooms,
+                }
+            )
+
+        return rotated
+
     @runtime_calculator
-    def create_dataset(self) -> List[Dict]:
+    def _create_dataset(self, mirroring: bool, rotating: bool, slicer: int) -> List[Dict]:
         """Create dataset
 
         Returns:
@@ -133,120 +206,57 @@ class PlanDataCreatorHelper:
         """
 
         image_names = os.listdir(Configuration.DATA_PATH)
-        image_paths = [os.path.join(Configuration.DATA_PATH, image_name) for image_name in image_names]
+        image_paths = [os.path.join(Configuration.DATA_PATH, image_name) for image_name in image_names][:slicer]
 
         original_images = []
         plan_dataset = []
         with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
             with tqdm(total=len(image_paths), desc="Reading images") as pbar:
-                for original_image in pool.imap(PlanDataCreatorHelper.read_original_image, image_paths, chunksize=5):
+                for original_image in pool.imap(PlanDataCreatorHelper.read_original_image, image_paths, chunksize=10):
                     if original_image is not None:
                         original_images.append(original_image)
                     pbar.update()
 
             with tqdm(total=len(original_images), desc="Processing images") as pbar:
-                for data in pool.imap(PlanDataCreatorHelper.process_data, original_images, chunksize=5):
+                for data in pool.imap(PlanDataCreatorHelper.process_data, original_images, chunksize=10):
                     plan_dataset.append(data)
                     pbar.update()
 
+            if mirroring:
+                mirrored = []
+                with tqdm(total=len(plan_dataset), desc="Mirroring images") as pbar:
+                    for data in pool.imap(PlanDataCreatorHelper.process_mirroring, plan_dataset, chunksize=10):
+                        mirrored += data
+                        pbar.update()
+
+                plan_dataset += mirrored
+
+            if rotating:
+                rotated = []
+                with tqdm(total=len(plan_dataset), desc="Rotating images") as pbar:
+                    for data in pool.imap(PlanDataCreatorHelper.process_rotating, plan_dataset, chunksize=10):
+                        rotated += data
+                        pbar.update()
+
+                plan_dataset += rotated
+
         return plan_dataset
-
-    @runtime_calculator
-    def mirror_dataset(self, plan_dataset: List[Dict]) -> List[Dict]:
-        """Augment dataset by mirroring
-
-        Args:
-            plan_dataset (List[Dict]): dataset
-
-        Returns:
-            List[Dict]: mirrored dataset
-        """
-
-        mirrored_dataset = []
-        for data in plan_dataset:
-            floor = data["floor"]
-            walls = data["walls"]
-            rooms = data["rooms"]
-
-            mirrored_floor_vertically = floor[:, :, ::-1]
-            mirrored_walls_vertically = walls[:, :, ::-1]
-            mirrored_rooms_vertically = rooms[:, :, ::-1]
-            mirrored_dataset.append(
-                {
-                    "floor": mirrored_floor_vertically,
-                    "walls": mirrored_walls_vertically,
-                    "rooms": mirrored_rooms_vertically,
-                }
-            )
-
-            mirrored_floor_horizontally = floor[:, ::-1, :]
-            mirrored_walls_horizontally = walls[:, ::-1, :]
-            mirrored_rooms_horizontally = rooms[:, ::-1, :]
-            mirrored_dataset.append(
-                {
-                    "floor": mirrored_floor_horizontally,
-                    "walls": mirrored_walls_horizontally,
-                    "rooms": mirrored_rooms_horizontally,
-                }
-            )
-
-        return mirrored_dataset
-
-    @runtime_calculator
-    def rotate_dataset(self, plan_dataset: List[Dict]) -> List[Dict]:
-        """Augment dataset by rotating
-
-        Args:
-            plan_dataset (List[Dict]): dataset
-
-        Returns:
-            List[Dict]: rotated dataset
-        """
-
-        rotated_dataset = []
-        for data in plan_dataset:
-            floor = data["floor"]
-            walls = data["walls"]
-            rooms = data["rooms"]
-
-            for time in range(1, 4):
-                rotated_floor = torch.rot90(floor, time, dims=(1, 2))
-                rotated_walls = torch.rot90(walls, time, dims=(1, 2))
-                rotated_rooms = torch.rot90(rooms, time, dims=(1, 2))
-
-                rotated_dataset.append(
-                    {
-                        "floor": rotated_floor,
-                        "walls": rotated_walls,
-                        "rooms": rotated_rooms,
-                    }
-                )
-
-        return rotated_dataset
 
 
 class PlanDataCreator(PlanDataCreatorHelper):
     """Plan dataset creator"""
 
-    def __init__(self, mirroring: bool, rotating: bool):
+    def __init__(self, mirroring: bool, rotating: bool, slicer: int = int(1e10)):
         self.mirroring = mirroring
         self.rotating = rotating
+        self.slicer = slicer
+
         self.plan_dataset = []
 
     def create(self) -> None:
         """Create dataset"""
 
-        plan_dataset = self.create_dataset()
-
-        if self.mirroring:
-            mirrored_dataset = self.mirror_dataset(plan_dataset)
-            plan_dataset += mirrored_dataset
-
-        if self.rotating:
-            rotated_dataset = self.rotate_dataset(plan_dataset)
-            plan_dataset += rotated_dataset
-
-        self.plan_dataset = plan_dataset
+        self.plan_dataset = self._create_dataset(self.mirroring, self.rotating, self.slicer)
 
 
 class PlanDataset(Dataset):
@@ -265,7 +275,5 @@ class PlanDataset(Dataset):
 
 
 if __name__ == "__main__":
-    plan_data_creator = PlanDataCreator(mirroring=False, rotating=False)
+    plan_data_creator = PlanDataCreator(mirroring=True, rotating=True, slicer=500)
     plan_data_creator.create()
-
-    print(plan_data_creator.plan_dataset[0])
