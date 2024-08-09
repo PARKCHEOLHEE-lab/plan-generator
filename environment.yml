@@ -1,0 +1,23 @@
+name: plan-generator
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  - cudatoolkit=11.8
+  - pytorch=2.1.1
+  - torchvision=0.16.1
+  - torchaudio=2.1.1
+  - pip:
+      - ray==2.9.0
+      - mapbox-earcut==1.0.1
+      - tqdm==4.66.1
+      - tensorboard==2.16.2
+      - scipy==1.11.2
+      - scikit-image==0.19.2
+      - numpy==1.25.1
+      - matplotlib==3.7.2
+      - pre-commit==3.7.0
