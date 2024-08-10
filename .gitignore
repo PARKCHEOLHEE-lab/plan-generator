@@ -1,3 +1,4 @@
 debugvisualizer/
-plan_generator/data/
+plan_generator/data/plan
+plan_generator/data/processed
 __pycache__/
