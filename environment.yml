@@ -20,4 +20,6 @@ dependencies:
       - scikit-image==0.19.2
       - numpy==1.25.1
       - matplotlib==3.7.2
+      - opencv-python==4.10.0.84
+      - ipykernel==6.29.5
       - pre-commit==3.7.0
