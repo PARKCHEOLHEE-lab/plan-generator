@@ -1,13 +1,12 @@
 import os
 import sys
 import cv2
+import pickle
 import torch
-import traceback
 import numpy as np
 import multiprocessing
 
-from tqdm import tqdm
-from typing import List, Dict
+from typing import List, Tuple
 from torch.utils.data import Dataset
 
 if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
@@ -22,43 +21,18 @@ class PlanDataCreatorHelper:
     """Plan dataset creator helper"""
 
     @staticmethod
-    def read_original_image(image_path: str) -> np.ndarray:
-        """Read raw image data
-
-        Args:
-            image_path (str): image path
-
-        Returns:
-            np.ndarray: original image data
-        """
-
-        original_image = None
-
-        try:
-            original_image = cv2.imread(image_path)
-            original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
-
-        except:
-            print(traceback.format_exc(), image_path)
-
-        return original_image
-
-    @staticmethod
-    def process_data(original_image: np.ndarray) -> dict:
+    def process_data(image_path: str, index: int) -> torch.Tensor:
         """Process a single image data
 
         Args:
             original_image (np.ndarray): original image data
 
         Returns:
-            dict: processed data
+            torch.Tensor: processed data
         """
 
-        processed = {
-            "floor": None,
-            "walls": None,
-            "rooms": None,
-        }
+        original_image = cv2.imread(image_path)
+        original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
 
         # Extract the exterior walls
         exterior_walls_mask = (
@@ -113,167 +87,118 @@ class PlanDataCreatorHelper:
         permuted_binary_walls = torch.FloatTensor(binary_walls).permute(2, 0, 1)
         permuted_rooms = torch.LongTensor(rooms).permute(2, 0, 1)
 
-        # Save the processed data
-        processed["floor"] = permuted_binary_floor
-        processed["walls"] = permuted_binary_walls
-        processed["rooms"] = permuted_rooms
+        processed = torch.vstack([permuted_binary_floor, permuted_binary_walls, permuted_rooms])
 
-        assert processed["floor"] is not None
-        assert processed["walls"] is not None
-        assert processed["rooms"] is not None
-
-        return processed
+        # Save preprocessed data
+        torch.save(
+            obj=processed,
+            f=os.path.join(Configuration.DATA_SAVE_DIR, f"{index}.pt"),
+            pickle_protocol=pickle.HIGHEST_PROTOCOL,
+        )
 
     @staticmethod
-    def process_mirroring(data: dict) -> List[Dict]:
+    def process_mirroring(data: torch.Tensor) -> List[torch.Tensor]:
         """Mirror data horzontally and vertically
 
         Args:
-            data (dict): processed data
+            data (torch.Tensor): processed data
 
         Returns:
-            List[Dict]: mirrored data
+            List[torch.Tensor]: mirrored data
         """
 
         mirrored = []
 
-        floor = data["floor"]
-        walls = data["walls"]
-        rooms = data["rooms"]
+        floor = data[0].unsqueeze(0)
+        walls = data[1].unsqueeze(0)
+        rooms = data[2].unsqueeze(0)
 
+        # Mirror data vertically
         mirrored_floor_vertically = floor.flip(2)
         mirrored_walls_vertically = walls.flip(2)
         mirrored_rooms_vertically = rooms.flip(2)
-        mirrored.append(
-            {
-                "floor": mirrored_floor_vertically,
-                "walls": mirrored_walls_vertically,
-                "rooms": mirrored_rooms_vertically,
-            }
+        mirrored_vertically = torch.vstack(
+            [mirrored_floor_vertically, mirrored_walls_vertically, mirrored_rooms_vertically]
         )
 
+        # Mirror data horizontally
         mirrored_floor_horizontally = floor.flip(1)
         mirrored_walls_horizontally = walls.flip(1)
         mirrored_rooms_horizontally = rooms.flip(1)
-        mirrored.append(
-            {
-                "floor": mirrored_floor_horizontally,
-                "walls": mirrored_walls_horizontally,
-                "rooms": mirrored_rooms_horizontally,
-            }
+        mirrored_horizontally = torch.vstack(
+            [mirrored_floor_horizontally, mirrored_walls_horizontally, mirrored_rooms_horizontally]
         )
+
+        mirrored = [mirrored_vertically, mirrored_horizontally]
 
         return mirrored
 
     @staticmethod
-    def process_rotating(data: dict) -> List[Dict]:
+    def process_rotating(data: torch.Tensor) -> List[torch.Tensor]:
         """Rotate data 90, 180, and 270 degrees
 
         Args:
-            data (dict): processed data
+            data (torch.Tensor): processed data
 
         Returns:
-            List[Dict]: rotated data
+            List[torch.Tensor]: rotated data
         """
 
         rotated = []
 
-        floor = data["floor"]
-        walls = data["walls"]
-        rooms = data["rooms"]
+        floor = data[0].unsqueeze(0)
+        walls = data[1].unsqueeze(0)
+        rooms = data[2].unsqueeze(0)
 
+        # Rotate data by 90 x `time`
         for time in range(1, 4):
             rotated_floor = torch.rot90(floor, time, dims=(1, 2))
             rotated_walls = torch.rot90(walls, time, dims=(1, 2))
             rotated_rooms = torch.rot90(rooms, time, dims=(1, 2))
+            rotated_each = torch.vstack([rotated_floor, rotated_walls, rotated_rooms])
 
-            rotated.append(
-                {
-                    "floor": rotated_floor,
-                    "walls": rotated_walls,
-                    "rooms": rotated_rooms,
-                }
-            )
+            rotated.append(rotated_each)
 
         return rotated
-
-    @runtime_calculator
-    def _create_dataset(self, mirroring: bool, rotating: bool, slicer: int) -> List[Dict]:
-        """Create dataset
-
-        Returns:
-            List[Dict]: dataset
-        """
-
-        image_names = os.listdir(Configuration.DATA_PATH)
-        image_paths = [os.path.join(Configuration.DATA_PATH, image_name) for image_name in image_names][:slicer]
-
-        original_images = []
-        plan_dataset = []
-        with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
-            with tqdm(total=len(image_paths), desc="Reading images") as pbar:
-                for original_image in pool.imap(PlanDataCreatorHelper.read_original_image, image_paths, chunksize=10):
-                    if original_image is not None:
-                        original_images.append(original_image)
-                    pbar.update()
-
-            with tqdm(total=len(original_images), desc="Processing images") as pbar:
-                for data in pool.imap(PlanDataCreatorHelper.process_data, original_images, chunksize=10):
-                    plan_dataset.append(data)
-                    pbar.update()
-
-            if mirroring:
-                mirrored = []
-                with tqdm(total=len(plan_dataset), desc="Mirroring images") as pbar:
-                    for data in pool.imap(PlanDataCreatorHelper.process_mirroring, plan_dataset, chunksize=10):
-                        mirrored += data
-                        pbar.update()
-
-                plan_dataset += mirrored
-
-            if rotating:
-                rotated = []
-                with tqdm(total=len(plan_dataset), desc="Rotating images") as pbar:
-                    for data in pool.imap(PlanDataCreatorHelper.process_rotating, plan_dataset, chunksize=10):
-                        rotated += data
-                        pbar.update()
-
-                plan_dataset += rotated
-
-        return plan_dataset
 
 
 class PlanDataCreator(PlanDataCreatorHelper):
     """Plan dataset creator"""
 
-    def __init__(self, mirroring: bool, rotating: bool, slicer: int = int(1e10)):
+    def __init__(self, mirroring: bool = False, rotating: bool = False, slicer: int = int(1e10)):
         self.mirroring = mirroring
         self.rotating = rotating
         self.slicer = slicer
 
-        self.plan_dataset = []
-
+    @runtime_calculator
     def create(self) -> None:
         """Create dataset"""
 
-        self.plan_dataset = self._create_dataset(self.mirroring, self.rotating, self.slicer)
+        os.makedirs(Configuration.DATA_SAVE_DIR, exist_ok=True)
+
+        files = os.listdir(Configuration.DATA_PATH)
+        tasks = [(os.path.join(Configuration.DATA_PATH, file), index) for index, file in enumerate(files)][
+            : self.slicer
+        ]
+
+        with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+            print("Processing data ...")
+            pool.starmap(PlanDataCreatorHelper.process_data, tasks)
+            print("Processing is done !")
 
 
 class PlanDataset(Dataset):
-    def __init__(self, dataset: List[Dict]):
-        self.dataset = dataset
+    """Plan dataset"""
 
-    def __len__(self):
-        return len(self.dataset)
+    def __init__(self):
+        self.dataset_paths = [
+            os.path.join(Configuration.DATA_SAVE_DIR, name) for name in os.listdir(Configuration.DATA_SAVE_DIR)
+        ]
 
-    def __getitem__(self, index):
-        floor = self.dataset[index]["floor"]
-        walls = self.dataset[index]["walls"]
-        rooms = self.dataset[index]["rooms"]
+    def __len__(self) -> int:
+        return len(self.dataset_paths)
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor]:
+        floor, walls, rooms = torch.load(self.dataset_paths[index])
 
         return floor.to(Configuration.DEVICE), walls.to(Configuration.DEVICE), rooms.to(Configuration.DEVICE)
-
-
-if __name__ == "__main__":
-    plan_data_creator = PlanDataCreator(mirroring=True, rotating=True, slicer=500)
-    plan_data_creator.create()
