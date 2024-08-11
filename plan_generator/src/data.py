@@ -1,12 +1,13 @@
 import os
 import sys
 import cv2
+import random
 import pickle
 import torch
 import numpy as np
 import multiprocessing
 
-from typing import List, Tuple
+from typing import Tuple
 from torch.utils.data import Dataset
 
 if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
@@ -15,6 +16,7 @@ if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
 from plan_generator.src.config import Configuration
 from plan_generator.src.enums import LabelsNew, LabelsOld, Colors
 from plan_generator.src.utils import runtime_calculator
+from plan_generator.src.transforms import TransformMirroring, TransformRotating
 
 
 class PlanDataCreatorHelper:
@@ -96,78 +98,11 @@ class PlanDataCreatorHelper:
             pickle_protocol=pickle.HIGHEST_PROTOCOL,
         )
 
-    @staticmethod
-    def process_mirroring(data: torch.Tensor) -> List[torch.Tensor]:
-        """Mirror data horzontally and vertically
-
-        Args:
-            data (torch.Tensor): processed data
-
-        Returns:
-            List[torch.Tensor]: mirrored data
-        """
-
-        mirrored = []
-
-        floor = data[0].unsqueeze(0)
-        walls = data[1].unsqueeze(0)
-        rooms = data[2].unsqueeze(0)
-
-        # Mirror data vertically
-        mirrored_floor_vertically = floor.flip(2)
-        mirrored_walls_vertically = walls.flip(2)
-        mirrored_rooms_vertically = rooms.flip(2)
-        mirrored_vertically = torch.vstack(
-            [mirrored_floor_vertically, mirrored_walls_vertically, mirrored_rooms_vertically]
-        )
-
-        # Mirror data horizontally
-        mirrored_floor_horizontally = floor.flip(1)
-        mirrored_walls_horizontally = walls.flip(1)
-        mirrored_rooms_horizontally = rooms.flip(1)
-        mirrored_horizontally = torch.vstack(
-            [mirrored_floor_horizontally, mirrored_walls_horizontally, mirrored_rooms_horizontally]
-        )
-
-        mirrored = [mirrored_vertically, mirrored_horizontally]
-
-        return mirrored
-
-    @staticmethod
-    def process_rotating(data: torch.Tensor) -> List[torch.Tensor]:
-        """Rotate data 90, 180, and 270 degrees
-
-        Args:
-            data (torch.Tensor): processed data
-
-        Returns:
-            List[torch.Tensor]: rotated data
-        """
-
-        rotated = []
-
-        floor = data[0].unsqueeze(0)
-        walls = data[1].unsqueeze(0)
-        rooms = data[2].unsqueeze(0)
-
-        # Rotate data by 90 x `time`
-        for time in range(1, 4):
-            rotated_floor = torch.rot90(floor, time, dims=(1, 2))
-            rotated_walls = torch.rot90(walls, time, dims=(1, 2))
-            rotated_rooms = torch.rot90(rooms, time, dims=(1, 2))
-            rotated_each = torch.vstack([rotated_floor, rotated_walls, rotated_rooms])
-
-            rotated.append(rotated_each)
-
-        return rotated
-
 
 class PlanDataCreator(PlanDataCreatorHelper):
     """Plan dataset creator"""
 
-    def __init__(self, mirroring: bool = False, rotating: bool = False, slicer: int = int(1e10)):
-        self.mirroring = mirroring
-        self.rotating = rotating
+    def __init__(self, slicer: int = int(1e10)):
         self.slicer = slicer
 
     @runtime_calculator
@@ -176,10 +111,8 @@ class PlanDataCreator(PlanDataCreatorHelper):
 
         os.makedirs(Configuration.DATA_SAVE_DIR, exist_ok=True)
 
-        files = os.listdir(Configuration.DATA_PATH)
-        tasks = [(os.path.join(Configuration.DATA_PATH, file), index) for index, file in enumerate(files)][
-            : self.slicer
-        ]
+        files = os.listdir(Configuration.DATA_PATH)[: self.slicer]
+        tasks = [(os.path.join(Configuration.DATA_PATH, file), index) for index, file in enumerate(files)]
 
         with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
             print("Processing data ...")
@@ -190,15 +123,49 @@ class PlanDataCreator(PlanDataCreatorHelper):
 class PlanDataset(Dataset):
     """Plan dataset"""
 
-    def __init__(self):
-        self.dataset_paths = [
-            os.path.join(Configuration.DATA_SAVE_DIR, name) for name in os.listdir(Configuration.DATA_SAVE_DIR)
-        ]
+    def __init__(self, slicer=int(1e10)):
+        self.slicer = slicer
+
+        files = os.listdir(Configuration.DATA_SAVE_DIR)[: self.slicer]
+        self.dataset_paths = [os.path.join(Configuration.DATA_SAVE_DIR, name) for name in files]
+
+        # No fixed seed
+        self.local_random = random.Random()
+        self.transform_mirroring = TransformMirroring()
+        self.transform_rotating = TransformRotating()
 
     def __len__(self) -> int:
         return len(self.dataset_paths)
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor]:
+        """On-the-fly data augmentation
+
+        - Mirroring
+            0: none
+            1: horizontal
+            2: vertical
+
+        - Rotating
+            0: none
+            1: 90 degree
+            2: 180 degree
+            3: 270 degree
+        """
+
         floor, walls, rooms = torch.load(self.dataset_paths[index])
+
+        floor = floor.unsqueeze(0)
+        walls = walls.unsqueeze(0)
+        rooms = rooms.unsqueeze(0)
+
+        # mirroring data
+        mirroring_dimension = self.local_random.choice((0, 1, 2))
+        if mirroring_dimension in (1, 2):
+            floor, walls, rooms = self.transform_mirroring((floor, walls, rooms), mirroring_dimension)
+
+        # rotating data
+        rotation_multiplier = self.local_random.choice((0, 1, 2, 3))
+        if rotation_multiplier in (1, 2, 3):
+            floor, walls, rooms = self.transform_rotating((floor, walls, rooms), rotation_multiplier)
 
         return floor.to(Configuration.DEVICE), walls.to(Configuration.DEVICE), rooms.to(Configuration.DEVICE)
