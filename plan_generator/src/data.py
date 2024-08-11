@@ -138,7 +138,7 @@ class PlanDataset(Dataset):
         return len(self.dataset_paths)
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor]:
-        """On-the-fly data augmentation
+        """Using On-the-fly data augmentation method for the memory efficiency and the generalization
 
         - Mirroring
             0: none
