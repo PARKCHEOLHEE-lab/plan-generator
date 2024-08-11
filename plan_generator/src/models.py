@@ -118,26 +118,11 @@ class MlpEncoder(nn.Module):
             in_features=65536, initial_out_features=512, repeat=6
 
         the forward process follows the below structure:
-            Sequential(
-                (0): ModuleList(
-                    (0): Linear(in_features=65536, out_features=512, bias=True)
-                    (1): ReLU(inplace=True)
-                    (2): Linear(in_features=512, out_features=256, bias=True)
-                    (3): ReLU(inplace=True)
-                    (4): Linear(in_features=256, out_features=128, bias=True)
-                    (5): ReLU(inplace=True)
-                    (6): Linear(in_features=128, out_features=64, bias=True)
-                    (7): ReLU(inplace=True)
-                    (8): Linear(in_features=64, out_features=128, bias=True)
-                    (9): ReLU(inplace=True)
-                    (10): Linear(in_features=128, out_features=256, bias=True)
-                    (11): ReLU(inplace=True)
-                    (12): Linear(in_features=256, out_features=512, bias=True)
-                    (13): ReLU(inplace=True)
-                    (14): Linear(in_features=512, out_features=65536, bias=True)
-                    (15): ReLU(inplace=True)
-                )
-            )
+            65536 → σ → 512 → σ → 256 → σ → 128 → σ → 64 → σ → 128 → σ → 256 → σ → 512 → σ → 65536
+
+        legends:
+            →     Linear
+            σ     Activation
     """
 
     def __init__(self, in_features: int, initial_out_features: int, repeat: int):
