@@ -115,14 +115,13 @@ class MlpEncoder(nn.Module):
 
     Example:
         When the arguments are as follows:
-            in_features=65536, initial_out_features=512, repeat=6
+            in_features=256x256(65536), initial_out_features=256x2(512), repeat=6
 
         the forward process follows the below structure:
-            65536 → σ → 512 → σ → 256 → σ → 128 → σ → 64 → σ → 128 → σ → 256 → σ → 512 → σ → 65536
+            256x256(65536) → 256x2(512) → 256 → 128 → 64 → 128 → 256 → 256x2(512) → 256x256(65536)
 
         legends:
-            →     Linear
-            σ     Activation
+            →     Linear with σ
     """
 
     def __init__(self, in_features: int, initial_out_features: int, repeat: int):
