@@ -23,3 +23,4 @@ dependencies:
       - opencv-python==4.10.0.84
       - ipykernel==6.29.5
       - pre-commit==3.7.0
+      - pytorch-lightning==2.4.0
