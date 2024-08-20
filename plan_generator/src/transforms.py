@@ -17,7 +17,7 @@ class TransformMirroring:
 
         mirrored = torch.vstack(data).flip(mirroring_dimension)
 
-        return mirrored[0], mirrored[1], mirrored[2]
+        return mirrored[0].unsqueeze(0), mirrored[1].unsqueeze(0), mirrored[2].unsqueeze(0)
 
 
 class TransformRotating:
@@ -34,4 +34,4 @@ class TransformRotating:
 
         rotated = torch.rot90(torch.vstack(data), rotation_multiplier, dims=(1, 2))
 
-        return rotated[0], rotated[1], rotated[2]
+        return rotated[0].unsqueeze(0), rotated[1].unsqueeze(0), rotated[2].unsqueeze(0)
