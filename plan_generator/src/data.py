@@ -8,7 +8,7 @@ import numpy as np
 import multiprocessing
 
 from typing import Tuple
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, random_split
 
 if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
     sys.path.append(os.path.abspath(os.path.join(__file__, "../../../")))
@@ -168,4 +168,39 @@ class PlanDataset(Dataset):
         if rotation_multiplier in (1, 2, 3):
             floor, walls, rooms = self.transform_rotating((floor, walls, rooms), rotation_multiplier)
 
-        return floor.to(Configuration.DEVICE), walls.to(Configuration.DEVICE), rooms.to(Configuration.DEVICE)
+        return floor.to(Configuration.DEVICE), walls.to(Configuration.DEVICE), rooms.long().to(Configuration.DEVICE)
+
+
+class PlanDataLoader:
+    def __init__(self, plan_dataset: PlanDataset):
+        self.plan_dataset = plan_dataset
+
+        # split dataset
+        self.train_dataset, self.validation_dataset, self.test_dataset = random_split(
+            self.plan_dataset, [Configuration.TRAIN_SIZE, Configuration.VALIDATION_SIZE, Configuration.TEST_SIZE]
+        )
+
+        # assign data loaders
+        self.train_loader = DataLoader(
+            dataset=self.train_dataset,
+            batch_size=Configuration.BATCH_SIZE_WITH_DEVICE_COUNT,
+            shuffle=True,
+            num_workers=3,
+            persistent_workers=True,
+        )
+
+        self.validation_loader = DataLoader(
+            dataset=self.validation_dataset,
+            batch_size=Configuration.BATCH_SIZE_WITH_DEVICE_COUNT,
+            shuffle=False,
+            num_workers=3,
+            persistent_workers=True,
+        )
+
+        self.test_loader = DataLoader(
+            dataset=self.test_dataset,
+            batch_size=Configuration.BATCH_SIZE_WITH_DEVICE_COUNT,
+            shuffle=False,
+            num_workers=3,
+            persistent_workers=True,
+        )
