@@ -1,7 +1,13 @@
 import os
+import sys
 import torch
 import random
 import numpy as np
+
+if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
+    sys.path.append(os.path.abspath(os.path.join(__file__, "../../../")))
+
+from plan_generator.src.enums import LabelsNew
 
 
 class DataConfiguration:
@@ -15,7 +21,9 @@ class DataConfiguration:
 class ModelConfiguration:
     """Configuration for the model"""
 
-    STEPS = [64, 128, 256, 512, 1024]
+    CHANNELS_STEP = [64, 128, 256, 512, 1024]
+    REPEAT = 5
+
     EROSION_AND_DILATION_KERNEL_SIZE = (7, 7)
 
     DEVICE = "cpu"
@@ -23,6 +31,27 @@ class ModelConfiguration:
         DEVICE = "cuda"
 
     SEED = 777
+
+    TRAIN_SIZE = 0.80
+    VALIDATION_SIZE = 0.15
+    TEST_SIZE = 0.05
+
+    assert np.isclose(TRAIN_SIZE + VALIDATION_SIZE + TEST_SIZE, 1.00)
+
+    BATCH_SIZE = 64
+    BATCH_SIZE_WITH_DEVICE_COUNT = BATCH_SIZE * torch.cuda.device_count()
+
+    WALL_GENERATOR_IN_CHANNELS = 1
+    WALL_GENERATOR_OUT_CHANNELS = 1
+    WALL_GENERATOR_CHANNELS_STEP = [64, 128, 256, 512, 1024]
+    WALL_GENERATOR_REPEAT = 5
+    WALL_GENERATOR_LEARNING_RATE = 0.0002
+
+    ROOM_ALLOCATOR_IN_CHANNELS = 1
+    ROOM_ALLOCATOR_OUT_CHANNELS = LabelsNew.NUM_CLASSES.value
+    ROOM_ALLOCATOR_CHANNELS_STEP = [64, 128, 256, 512, 768, 896, 1024]
+    ROOM_ALLOCATOR_REPEAT = 5
+    ROOM_ALLOCATOR_LEARNING_RATE = 0.0001
 
 
 class Configuration(DataConfiguration, ModelConfiguration):
