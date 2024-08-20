@@ -1,5 +1,8 @@
 debugvisualizer/
+plan_generator/data/floorplan_dataset
 plan_generator/data/plan
 plan_generator/data/processed
 plan_generator/runs
+plan_generator/data/dataset.rar
+
 __pycache__/
