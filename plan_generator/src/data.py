@@ -168,7 +168,7 @@ class PlanDataset(Dataset):
         if rotation_multiplier in (1, 2, 3):
             floor, walls, rooms = self.transform_rotating((floor, walls, rooms), rotation_multiplier)
 
-        return floor.to(Configuration.DEVICE), walls.to(Configuration.DEVICE), rooms.long().to(Configuration.DEVICE)
+        return floor, walls, rooms.long()
 
 
 class PlanDataLoader:
