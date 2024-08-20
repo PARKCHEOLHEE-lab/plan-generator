@@ -1,14 +1,20 @@
 import os
 import sys
 import torch
+import pytorch_lightning as pl
+
 from torch import nn
 from typing import List
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
     sys.path.append(os.path.abspath(os.path.join(__file__, "../../../")))
 
-
 from plan_generator.src.config import Configuration
+from plan_generator.src.data import PlanDataset, PlanDataLoader
+
+torch.set_float32_matmul_precision("medium")
 
 
 class UNetDecoder(nn.Module):
@@ -82,7 +88,8 @@ class UNetDecoder(nn.Module):
     def _create_unet_decoder_blocks(self) -> nn.ModuleList:
         decoder_blocks = nn.ModuleList([])
         decoder_blocks += [
-            nn.Conv2d(self.channels_step[i], self.channels_step[i - 1], kernel_size=3, padding=1)
+            nn.Conv2d(self.channels_step[i - 1] * 2, self.channels_step[i - 1], kernel_size=3, padding=1)
+            # nn.Conv2d(self.channels_step[i], self.channels_step[i - 1], kernel_size=3, padding=1)
             for i in range(len(self.channels_step) - 1, 0, -1)
         ]
 
@@ -160,13 +167,13 @@ class MlpEncoder(nn.Module):
 
 
 class WallGenerator(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, channels_step: List[int], size: int, repeat: int):
+    def __init__(self, in_channels: int, out_channels: int, channels_step: List[int], size: int, encoder_repeat: int):
         super().__init__()
 
         self.size = size
-        self.repeat = repeat
+        self.encoder_repeat = encoder_repeat
 
-        self.encoder = MlpEncoder(self.size * self.size, self.size * 2, self.repeat)
+        self.encoder = MlpEncoder(self.size * self.size, self.size * 2, self.encoder_repeat)
         self.decoder = UNetDecoder(in_channels, out_channels, channels_step)
 
         self.to(Configuration.DEVICE)
@@ -179,13 +186,13 @@ class WallGenerator(nn.Module):
 
 
 class RoomAllocator(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, channels_step: List[int], size: int, repeat: int):
+    def __init__(self, in_channels: int, out_channels: int, channels_step: List[int], size: int, encoder_repeat: int):
         super().__init__()
 
         self.size = size
-        self.repeat = repeat
+        self.encoder_repeat = encoder_repeat
 
-        self.encoder = MlpEncoder(self.size * self.size, self.size * 2, self.repeat)
+        self.encoder = MlpEncoder(self.size * self.size, self.size * 2, self.encoder_repeat)
         self.decoder = UNetDecoder(in_channels, out_channels, channels_step)
 
         self.to(Configuration.DEVICE)
@@ -221,3 +228,185 @@ class DiceLoss(nn.Module):
         loss = 1 - dice
 
         return loss.mean()
+
+
+class PlanGenerator(pl.LightningModule):
+    def __init__(self, configuration: Configuration):
+        super().__init__()
+
+        self.configuration = configuration
+
+        self.wall_generator = WallGenerator(
+            in_channels=self.configuration.WALL_GENERATOR_IN_CHANNELS,
+            out_channels=self.configuration.WALL_GENERATOR_OUT_CHANNELS,
+            size=self.configuration.IMAGE_SIZE,
+            channels_step=self.configuration.WALL_GENERATOR_CHANNELS_STEP,
+            encoder_repeat=self.configuration.WALL_GENERATOR_REPEAT,
+        )
+
+        self.room_allocator = RoomAllocator(
+            in_channels=self.configuration.ROOM_ALLOCATOR_IN_CHANNELS,
+            out_channels=self.configuration.ROOM_ALLOCATOR_OUT_CHANNELS,
+            size=self.configuration.IMAGE_SIZE,
+            channels_step=self.configuration.ROOM_ALLOCATOR_CHANNELS_STEP,
+            encoder_repeat=self.configuration.ROOM_ALLOCATOR_REPEAT,
+        )
+
+        self.wall_generator_loss_function = nn.BCELoss()
+        self.room_allocator_loss_function = nn.CrossEntropyLoss()
+
+        self.automatic_optimization = False
+
+    def forward(self, floor: torch.Tensor, walls: torch.Tensor):
+        generated_walls = self.wall_generator(floor)
+        allocated_rooms = self.room_allocator(walls)
+
+        return generated_walls, allocated_rooms
+
+    def training_step(self, batch, _):
+        wall_generator_optimizer, room_allocator_optimizer = self.optimizers()
+        wall_generator_optimizer.zero_grad()
+        room_allocator_optimizer.zero_grad()
+
+        floor_batch, walls_batch, rooms_batch = batch
+
+        generated_walls, allocated_rooms = self(floor_batch, walls_batch)
+
+        masked_generated_walls = generated_walls.clone()
+        masked_generated_walls[floor_batch == 0] = 0
+
+        masked_allocated_rooms = allocated_rooms.clone()
+        masked_allocated_rooms[floor_batch.expand_as(allocated_rooms) == 0] = 0
+
+        wall_generator_loss = self.wall_generator_loss_function(masked_generated_walls, walls_batch)
+        room_allocator_loss = self.room_allocator_loss_function(masked_allocated_rooms, rooms_batch.squeeze(1))
+
+        wall_generator_loss.backward()
+        room_allocator_loss.backward()
+
+        wall_generator_optimizer.step()
+        room_allocator_optimizer.step()
+
+        self.log("train_wall_generator_loss", wall_generator_loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log("train_room_allocator_loss", room_allocator_loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(
+            "train_total_loss", wall_generator_loss + room_allocator_loss, prog_bar=True, on_step=True, on_epoch=True
+        )
+
+        return {
+            "wall_generator_loss": wall_generator_loss,
+            "room_allocator_loss": room_allocator_loss,
+            "train_total_loss": wall_generator_loss + room_allocator_loss,
+        }
+
+    def on_train_epoch_end(self):
+        print("train_epoch_end")
+
+    def validation_step(self, batch, _):
+        floor_batch, walls_batch, rooms_batch = batch
+
+        generated_walls, allocated_rooms = self(floor_batch, walls_batch)
+
+        masked_generated_walls = generated_walls.clone()
+        masked_generated_walls[floor_batch == 0] = 0
+
+        masked_allocated_rooms = allocated_rooms.clone()
+        masked_allocated_rooms[floor_batch.expand_as(allocated_rooms) == 0] = 0
+
+        wall_generator_loss = self.wall_generator_loss_function(masked_generated_walls, walls_batch)
+        room_allocator_loss = self.room_allocator_loss_function(masked_allocated_rooms, rooms_batch.squeeze(1))
+
+        self.log("val_wall_generator_loss", wall_generator_loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log("val_room_allocator_loss", room_allocator_loss, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(
+            "val_total_loss", wall_generator_loss + room_allocator_loss, prog_bar=True, on_step=True, on_epoch=True
+        )
+
+        return {
+            "val_wall_generator_loss": wall_generator_loss,
+            "val_room_allocator_loss": room_allocator_loss,
+            "val_total_loss": wall_generator_loss + room_allocator_loss,
+        }
+
+    def on_validation_epoch_end(self):
+        print("validation_epoch_end")
+
+    def test_step(self):
+        pass
+
+    def configure_optimizers(self):
+        wall_generator_optimizer = torch.optim.Adam(
+            self.wall_generator.parameters(), lr=self.configuration.WALL_GENERATOR_LEARNING_RATE
+        )
+
+        wall_generator_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            wall_generator_optimizer, factor=0.1, patience=10, verbose=True
+        )
+
+        room_allocator_optimizer = torch.optim.Adam(
+            self.room_allocator.parameters(), lr=self.configuration.ROOM_ALLOCATOR_LEARNING_RATE
+        )
+
+        room_allocator_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            room_allocator_optimizer, factor=0.1, patience=10, verbose=True
+        )
+
+        return [
+            {
+                "optimizer": wall_generator_optimizer,
+                "lr_scheduler": wall_generator_scheduler,
+                "monitor": "val_wall_generator_loss",
+            },
+            {
+                "optimizer": room_allocator_optimizer,
+                "lr_scheduler": room_allocator_scheduler,
+                "monitor": "val_room_allocator_loss",
+            },
+        ]
+
+    @torch.no_grad()
+    def infer(self):
+        self.eval()
+
+        # TODO:
+
+        self.train()
+
+
+if __name__ == "__main__":
+
+    def train():
+        config = Configuration()
+        model = PlanGenerator(config)
+
+        # Create data loaders
+        plan_dataset = PlanDataset()
+        plan_dataloader = PlanDataLoader(plan_dataset)
+
+        # Create logger
+        logger = TensorBoardLogger(save_dir=config.LOG_DIR)
+
+        # Create checkpoint callback
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=os.path.join(logger.log_dir, "checkpoints"),
+            filename="{epoch:02d}-{val_loss:.2f}",
+            save_top_k=3,
+            monitor="val_loss",
+        )
+
+        # Create trainer with specific logger and checkpoint callback
+        trainer = pl.Trainer(
+            logger=logger,
+            callbacks=[checkpoint_callback],
+            max_epochs=1,
+            accelerator="auto",
+            num_nodes=1,
+            num_sanity_val_steps=1,
+            devices=torch.cuda.device_count(),
+            accumulate_grad_batches=8,
+        )
+
+        # Fit the model
+        trainer.fit(model, plan_dataloader.train_loader, plan_dataloader.validation_loader)
+
+    train()
