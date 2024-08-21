@@ -183,7 +183,7 @@ class PlanDataLoader:
         # assign data loaders
         self.train_loader = DataLoader(
             dataset=self.train_dataset,
-            batch_size=Configuration.BATCH_SIZE_WITH_DEVICE_COUNT,
+            batch_size=Configuration.BATCH_SIZE,
             shuffle=True,
             num_workers=3,
             persistent_workers=True,
@@ -191,7 +191,7 @@ class PlanDataLoader:
 
         self.validation_loader = DataLoader(
             dataset=self.validation_dataset,
-            batch_size=Configuration.BATCH_SIZE_WITH_DEVICE_COUNT,
+            batch_size=Configuration.BATCH_SIZE,
             shuffle=False,
             num_workers=3,
             persistent_workers=True,
@@ -199,7 +199,7 @@ class PlanDataLoader:
 
         self.test_loader = DataLoader(
             dataset=self.test_dataset,
-            batch_size=Configuration.BATCH_SIZE_WITH_DEVICE_COUNT,
+            batch_size=Configuration.BATCH_SIZE,
             shuffle=False,
             num_workers=3,
             persistent_workers=True,
