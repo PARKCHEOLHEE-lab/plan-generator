@@ -38,24 +38,41 @@ class ModelConfiguration:
 
     assert np.isclose(TRAIN_SIZE + VALIDATION_SIZE + TEST_SIZE, 1.00)
 
-    BATCH_SIZE = 64
-    BATCH_SIZE_WITH_DEVICE_COUNT = BATCH_SIZE * torch.cuda.device_count()
+    BATCH_SIZE = 16
 
     WALL_GENERATOR_IN_CHANNELS = 1
     WALL_GENERATOR_OUT_CHANNELS = 1
     WALL_GENERATOR_CHANNELS_STEP = [64, 128, 256, 512, 1024]
     WALL_GENERATOR_REPEAT = 5
     WALL_GENERATOR_LEARNING_RATE = 0.0002
+    WALL_GENERATOR_LEARNING_RATE_DECAY_FACTOR = 0.5
+    WALL_GENERATOR_LEARNING_RATE_DECAY_PATIENCE = 5
 
     ROOM_ALLOCATOR_IN_CHANNELS = 1
     ROOM_ALLOCATOR_OUT_CHANNELS = LabelsNew.NUM_CLASSES.value
     ROOM_ALLOCATOR_CHANNELS_STEP = [64, 128, 256, 512, 768, 896, 1024]
     ROOM_ALLOCATOR_REPEAT = 5
     ROOM_ALLOCATOR_LEARNING_RATE = 0.0001
+    ROOM_ALLOCATOR_LEARNING_RATE_DECAY_FACTOR = 0.5
+    ROOM_ALLOCATOR_LEARNING_RATE_DECAY_PATIENCE = 5
+
+    EPOCHS = 100
 
 
 class Configuration(DataConfiguration, ModelConfiguration):
     """Configuration for the plan generator"""
+
+    def __init__(self):
+        pass
+
+    def to_dict(self):
+        raw_config = {**vars(Configuration), **vars(ModelConfiguration), **vars(DataConfiguration)}
+        config = {}
+        for key, value in raw_config.items():
+            if not key.startswith("__") and not callable(value):
+                config[key] = value
+
+        return config
 
     LOG_DIR = os.path.abspath(os.path.join(__file__, "../../runs"))
 
