@@ -38,8 +38,6 @@ class ModelConfiguration:
 
     assert np.isclose(TRAIN_SIZE + VALIDATION_SIZE + TEST_SIZE, 1.00)
 
-    BATCH_SIZE = 16
-
     WALL_GENERATOR_IN_CHANNELS = 1
     WALL_GENERATOR_OUT_CHANNELS = 1
     WALL_GENERATOR_CHANNELS_STEP = [64, 128, 256, 512, 1024]
@@ -57,6 +55,9 @@ class ModelConfiguration:
     ROOM_ALLOCATOR_LEARNING_RATE_DECAY_PATIENCE = 5
 
     EPOCHS = 100
+    BATCH_SIZE = 16
+    GRADIENT_ACCUMULATION_STEP = 32
+    TOTAL_BATCH_SIZE = BATCH_SIZE * GRADIENT_ACCUMULATION_STEP
 
 
 class Configuration(DataConfiguration, ModelConfiguration):
