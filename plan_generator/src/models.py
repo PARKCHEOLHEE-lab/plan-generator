@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 
 from torch import nn
 from typing import List, Tuple
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -249,48 +250,89 @@ class PlanGenerator(nn.Module):
             encoder_repeat=self.configuration.ROOM_ALLOCATOR_REPEAT,
         )
 
-    def forward(self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
-        floor_batch, walls_batch, _ = batch
-
+    def forward(
+        self, floor_batch: torch.Tensor, walls_batch: torch.Tensor, masking: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         generated_walls = self.wall_generator(floor_batch)
         allocated_rooms = self.room_allocator(walls_batch)
 
+        if masking:
+            # Mask cells of `generated_walls` where the cells from the floor_batch are 0
+            generated_walls_masked = generated_walls.clone()
+            generated_walls_masked[floor_batch == 0] = 0
+
+            # Mask cells of `allocated_rooms` where the cells from the floor_batch are 0
+            allocated_rooms_masked = allocated_rooms.clone()
+            allocated_rooms_masked[floor_batch.expand_as(allocated_rooms) == 0] = 0
+
+            return generated_walls_masked, allocated_rooms_masked
+
         return generated_walls, allocated_rooms
 
+    @torch.no_grad
     def infer(self):
+        self.eval()
+
+        self.train()
+
         return
 
 
 class PlanGeneratorTrainer:
     """Trainer for the `PlanGenerator`"""
 
-    def __init__(self, plan_generator: PlanGenerator, existing_log_dir: str = None):
+    @property
+    def configuration(self):
+        return self.plan_generator.configuration
+
+    @property
+    def train_loader(self):
+        return self.plan_dataloader.train_loader
+
+    @property
+    def validation_loader(self):
+        return self.plan_dataloader.validation_loader
+
+    @property
+    def log_dir(self):
+        return self.summary_writer.log_dir
+
+    def __init__(self, plan_generator: PlanGenerator, plan_dataloader: PlanDataLoader, existing_log_dir: str = None):
         self.plan_generator = plan_generator
+        self.plan_dataloader = plan_dataloader
         self.existing_log_dir = existing_log_dir
 
         # Set summary writer
-        self.summary_writer = self._get_summary_writer(self.plan_generator.configuration, self.existing_log_dir)
+        self.summary_writer = self._get_summary_writer(self.configuration, self.existing_log_dir)
 
-        # Set states if there is
-        self.states = self._get_states(self.summary_writer.log_dir)
-
-        # self.log_dir, self.states = self._set_summary_writer(self.plan_generator.configuration, existing_log_dir)
+        # Set states of PlanGenerator
+        self.states = self._get_states(self.log_dir)
 
         # Set optimizers
         self.wall_generator_optimizer, self.room_allocator_optimizer = self._get_optimizers(
-            self.plan_generator.wall_generator, self.plan_generator.room_allocator, self.plan_generator.configuration
+            self.plan_generator.wall_generator, self.plan_generator.room_allocator, self.configuration
         )
 
         # Set schedulers
         self.wall_generator_scheduler, self.room_allocator_scheduler = self._get_lr_schedulers(
-            self.wall_generator_optimizer, self.room_allocator_optimizer, self.plan_generator.configuration
+            self.wall_generator_optimizer, self.room_allocator_optimizer, self.configuration
         )
 
         # Set loss functions
         self.wall_generator_loss_function, self.room_allocator_loss_function = self._get_loss_functions()
 
     def _get_summary_writer(self, configuration: Configuration, existing_log_dir: str) -> SummaryWriter:
-        log_dir = os.path.join(configuration.LOG_DIR, datetime.datetime.now().strftime("%Y-%m-%d__%H-%M-%S"))
+        """Create tensorboard SummaryWriter
+
+        Args:
+            configuration (Configuration): _description_
+            existing_log_dir (str): _description_
+
+        Returns:
+            SummaryWriter: _description_
+        """
+
+        log_dir = os.path.join(configuration.LOG_DIR, datetime.datetime.now().strftime("%m-%d-%Y__%H-%M-%S"))
 
         if existing_log_dir is not None:
             log_dir = existing_log_dir
@@ -339,14 +381,143 @@ class PlanGeneratorTrainer:
 
         return wall_generator_scheduler, room_allocator_scheduler
 
-    def _get_loss_functions(self) -> Tuple[nn.BCELoss, nn.CrossEntropyLoss]:
+    def _get_loss_functions(self) -> Tuple[nn.Module, nn.Module]:
         wall_generator_loss_function = nn.BCELoss()
         room_allocator_loss_function = nn.CrossEntropyLoss()
 
         return wall_generator_loss_function, room_allocator_loss_function
 
-    def train(self):
-        pass
+    def _train(
+        self,
+        configuration: Configuration,
+        plan_generator: PlanGenerator,
+        wall_generator_loss_function: nn.Module,
+        room_allocator_loss_function: nn.Module,
+        wall_generator_optimizer: torch.optim.Optimizer,
+        room_allocator_optimizer: torch.optim.Optimizer,
+        train_loader: DataLoader,
+    ):
+        wall_generator_loss_sum_train = 0
+        room_allocator_loss_sum_train = 0
+
+        for batch_index, (floor_batch, walls_batch, rooms_batch) in enumerate(train_loader):
+            # Forward propagation
+            generated_walls_masked, allocated_rooms_masked = plan_generator(floor_batch, walls_batch, masking=True)
+
+            # Compute wall generator loss
+            wall_generator_loss = wall_generator_loss_function(generated_walls_masked, walls_batch)
+            wall_generator_loss /= configuration.GRADIENT_ACCUMULATION_STEP
+            wall_generator_loss_sum_train += wall_generator_loss.item()
+            wall_generator_loss.backward()
+
+            # Compute room allocator loss
+            room_allocator_loss = room_allocator_loss_function(allocated_rooms_masked, rooms_batch.squeeze(1))
+            room_allocator_loss /= configuration.GRADIENT_ACCUMULATION_STEP
+            room_allocator_loss_sum_train += room_allocator_loss.item()
+            room_allocator_loss.backward()
+
+            # Accumulate gradient
+            if (batch_index + 1) % configuration.GRADIENT_ACCUMULATION_STEP == 0:
+                wall_generator_optimizer.step()
+                wall_generator_optimizer.zero_grad()
+                room_allocator_optimizer.step()
+                room_allocator_optimizer.zero_grad()
+
+        wall_generator_loss_avg_train = wall_generator_loss_sum_train / len(train_loader)
+        room_allocator_loss_avg_train = room_allocator_loss_sum_train / len(train_loader)
+
+        return wall_generator_loss_avg_train, room_allocator_loss_avg_train
+
+    @torch.no_grad
+    def _validate(
+        self,
+        plan_generator: PlanGenerator,
+        wall_generator_loss_function: nn.Module,
+        room_allocator_loss_function: nn.Module,
+        validation_loader: DataLoader,
+    ):
+        self.plan_generator.eval()
+
+        wall_generator_loss_sum_validation = 0
+        room_allocator_loss_sum_validation = 0
+
+        for floor_batch, walls_batch, rooms_batch in validation_loader:
+            generated_walls_masked, allocated_rooms_masked = plan_generator(floor_batch, walls_batch, masking=True)
+
+            wall_generator_loss = wall_generator_loss_function(generated_walls_masked, walls_batch)
+            wall_generator_loss_sum_validation += wall_generator_loss.item()
+
+            room_allocator_loss = room_allocator_loss_function(allocated_rooms_masked, rooms_batch.squeeze(1))
+            room_allocator_loss_sum_validation += room_allocator_loss.item()
+
+        wall_generator_loss_avg_validation = wall_generator_loss_sum_validation / len(validation_loader)
+        room_allocator_loss_avg_validation = room_allocator_loss_sum_validation / len(validation_loader)
+
+        self.plan_generator.train()
+
+        return wall_generator_loss_avg_validation, room_allocator_loss_avg_validation
+
+    def fit(self):
+        # epoch_start = 1
+        # epoch_end = self.configuration.EPOCHS + 1
+
+        wall_generator_initial_loss = torch.inf
+        room_allocator_initial_loss = torch.inf
+
+        states = {
+            "epoch": 1,
+            # `wall_generator` related
+            "wall_generator_state_dict": None,
+            "wall_generator_optimizer_state_dict": None,
+            "wall_generator_scheduler_state_dict": None,
+            "wall_generator_validation_loss": wall_generator_initial_loss,
+            # `room_allocator` related
+            "room_allocator_state_dict": None,
+            "room_allocator_optimizer_state_dict": None,
+            "room_allocator_scheduler_state_dict": None,
+            "room_allocator_validation_loss": room_allocator_initial_loss,
+            "configuration": self.configuration.to_dict(),
+        }
+
+        for epoch in range(1, self.configuration.EPOCHS + 1):
+            # Train
+            wall_generator_loss_avg_train, room_allocator_loss_avg_train = self._train(
+                self.configuration,
+                self.plan_generator,
+                self.wall_generator_loss_function,
+                self.room_allocator_loss_function,
+                self.wall_generator_optimizer,
+                self.room_allocator_optimizer,
+                self.train_loader,
+            )
+
+            # Validate
+            wall_generator_loss_avg_validation, room_allocator_loss_avg_validation = self._validate(
+                self.plan_generator,
+                self.wall_generator_loss_function,
+                self.room_allocator_loss_function,
+                self.validation_loader,
+            )
+
+            # Flag indicating whether the saving is needed
+            is_states_changed = False
+
+            # Save states of `wall_generator`
+            if wall_generator_loss_avg_validation < wall_generator_initial_loss:
+                states["wall_generator_state_dict"] = self.plan_generator.wall_generator.state_dict()
+                states["wall_generator_optimizer_state_dict"] = self.wall_generator_optimizer.state_dict()
+                states["wall_generator_scheduler_state_dict"] = self.wall_generator_scheduler.state_dict()
+                is_states_changed = True
+
+            # Save states of `room_allocator`
+            if room_allocator_loss_avg_validation < room_allocator_initial_loss:
+                states["room_allocator_state_dict"] = self.plan_generator.room_allocator.state_dict()
+                states["room_allocator_optimizer_state_dict"] = self.wall_generator_optimizer.state_dict()
+                states["room_allocator_scheduler_state_dict"] = self.room_allocator_scheduler.state_dict()
+                is_states_changed = True
+
+            if is_states_changed:
+                torch.save(states, self.log_dir)
 
 
 class _PlanGenerator(pl.LightningModule):
@@ -546,6 +717,11 @@ if __name__ == "__main__":
         # Fit the model
         trainer.fit(model, plan_dataloader.train_loader, plan_dataloader.validation_loader)
 
-    summary_writer = SummaryWriter(Configuration.LOG_DIR)
+    plan_dataloader = PlanDataLoader(plan_dataset=PlanDataset())
+    plan_generator = PlanGenerator(configuration=Configuration())
 
-    # train()
+    plan_generator_trainer = PlanGeneratorTrainer(
+        plan_generator=plan_generator, plan_dataloader=plan_dataloader, existing_log_dir=None
+    )
+
+    plan_generator_trainer.fit()
