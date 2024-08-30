@@ -36,6 +36,8 @@ class ModelConfiguration:
     VALIDATION_SIZE = 0.15
     TEST_SIZE = 0.05
 
+    STATES_PT = "states.pt"
+
     assert np.isclose(TRAIN_SIZE + VALIDATION_SIZE + TEST_SIZE, 1.00)
 
     WALL_GENERATOR_IN_CHANNELS = 1
@@ -57,7 +59,6 @@ class ModelConfiguration:
     EPOCHS = 100
     BATCH_SIZE = 16
     GRADIENT_ACCUMULATION_STEP = 32
-    TOTAL_BATCH_SIZE = BATCH_SIZE * GRADIENT_ACCUMULATION_STEP
 
 
 class Configuration(DataConfiguration, ModelConfiguration):
