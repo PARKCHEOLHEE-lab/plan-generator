@@ -172,8 +172,9 @@ class PlanDataset(Dataset):
 
 
 class PlanDataLoader:
-    def __init__(self, plan_dataset: PlanDataset):
+    def __init__(self, plan_dataset: PlanDataset, batch_size: int = Configuration.BATCH_SIZE):
         self.plan_dataset = plan_dataset
+        self.batch_size = batch_size
 
         # split dataset
         self.train_dataset, self.validation_dataset, self.test_dataset = random_split(
@@ -183,7 +184,7 @@ class PlanDataLoader:
         # assign data loaders
         self.train_loader = DataLoader(
             dataset=self.train_dataset,
-            batch_size=Configuration.BATCH_SIZE,
+            batch_size=self.batch_size,
             num_workers=3,
             shuffle=True,
             drop_last=True,
@@ -192,7 +193,7 @@ class PlanDataLoader:
 
         self.validation_loader = DataLoader(
             dataset=self.validation_dataset,
-            batch_size=Configuration.BATCH_SIZE,
+            batch_size=self.batch_size,
             num_workers=3,
             shuffle=False,
             drop_last=True,
@@ -201,7 +202,7 @@ class PlanDataLoader:
 
         self.test_loader = DataLoader(
             dataset=self.test_dataset,
-            batch_size=Configuration.BATCH_SIZE,
+            batch_size=self.batch_size,
             num_workers=3,
             shuffle=False,
             drop_last=True,
