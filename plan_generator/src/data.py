@@ -123,8 +123,9 @@ class PlanDataCreator(PlanDataCreatorHelper):
 class PlanDataset(Dataset):
     """Plan dataset"""
 
-    def __init__(self, slicer=int(1e10)):
+    def __init__(self, slicer=int(1e10), use_transform: bool = True):
         self.slicer = slicer
+        self.use_transform = use_transform
 
         files = os.listdir(Configuration.DATA_SAVE_DIR)[: self.slicer]
         self.dataset_paths = [os.path.join(Configuration.DATA_SAVE_DIR, name) for name in files]
@@ -160,12 +161,12 @@ class PlanDataset(Dataset):
 
         # mirroring data
         mirroring_dimension = self.local_random.choice((0, 1, 2))
-        if mirroring_dimension in (1, 2):
+        if self.use_transform and mirroring_dimension in (1, 2):
             floor, walls, rooms = self.transform_mirroring((floor, walls, rooms), mirroring_dimension)
 
         # rotating data
         rotation_multiplier = self.local_random.choice((0, 1, 2, 3))
-        if rotation_multiplier in (1, 2, 3):
+        if self.use_transform and rotation_multiplier in (1, 2, 3):
             floor, walls, rooms = self.transform_rotating((floor, walls, rooms), rotation_multiplier)
 
         return floor, walls, rooms.long()
