@@ -21,9 +21,6 @@ class DataConfiguration:
 class ModelConfiguration:
     """Configuration for the model"""
 
-    CHANNELS_STEP = [64, 128, 256, 512, 1024]
-    REPEAT = 5
-
     EROSION_AND_DILATION_KERNEL_SIZE = (7, 7)
 
     DEVICE = "cpu"
