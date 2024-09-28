@@ -1,9 +1,11 @@
 import os
 import sys
+import cv2
 import torch
+import numpy as np
 
 from torch import nn
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
     sys.path.append(os.path.abspath(os.path.join(__file__, "../../../")))
@@ -260,6 +262,28 @@ class PlanGenerator(nn.Module):
             return generated_walls_masked, allocated_rooms_masked
 
         return generated_walls, allocated_rooms
+
+    def erode_and_dilate(self, images: List[np.ndarray], kernel_size: Optional[Tuple[int]] = None) -> List[np.ndarray]:
+        """Erode and dilate a given image
+
+        Args:
+            images (List[np.ndarray]): List of images to process
+            kernel_size (Optional[Tuple[int]], optional): kernel size to process. Defaults to None.
+
+        Returns:
+            List[np.ndarray]: eroded and dilated images
+        """
+
+        kernel = np.ones(kernel_size or self.configuration.DEFAULT_EROSION_AND_DILATION_KERNEL_SIZE, np.uint8)
+
+        processed = []
+        for image in images:
+            image = cv2.erode(image.astype(np.uint8), kernel, iterations=1)
+            image = cv2.dilate(image.astype(np.uint8), kernel, iterations=1)
+
+            processed.append(image)
+
+        return processed
 
     @torch.no_grad
     def infer(self):
