@@ -2,9 +2,11 @@ import os
 import sys
 import torch
 import datetime
+import numpy as np
+import matplotlib.pyplot as plt
 
-from typing import Tuple
 from tqdm import tqdm
+from typing import Tuple, Optional
 from IPython.display import clear_output
 
 from torch import nn
@@ -15,25 +17,43 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
     sys.path.append(os.path.abspath(os.path.join(__file__, "../../../")))
 
-
+from plan_generator.src.enums import Colors
 from plan_generator.src.config import Configuration
-from plan_generator.src.data import PlanDataLoader
+from plan_generator.src.data import PlanDataLoader, PlanDataset
 from plan_generator.src.models import PlanGenerator, WallGenerator, RoomAllocator
 
 
 class PlanGeneratorTrainer:
     """Trainer for the `PlanGenerator`"""
 
-    def __init__(self, plan_generator: PlanGenerator, plan_dataloader: PlanDataLoader, existing_log_dir: str = None):
+    def __init__(
+        self,
+        plan_generator: PlanGenerator,
+        plan_dataset: PlanDataset,
+        existing_log_dir: Optional[str] = None,
+        sanity_checking: bool = False,
+    ):
         self.plan_generator = plan_generator
-        self.plan_dataloader = plan_dataloader
+        self.plan_dataset = plan_dataset
         self.existing_log_dir = existing_log_dir
+        self.sanity_checking = sanity_checking
 
-        # Set summary writer
-        self.summary_writer = self._get_summary_writer(self.configuration, self.existing_log_dir)
+        if self.sanity_checking:
+            self.plan_dataset.use_transform = False
 
-        # Set states of PlanGenerator
-        self.states = self._get_states(self.log_dir)
+        self.configuration.set_seed()
+
+        self.plan_dataloader = PlanDataLoader(self.plan_dataset)
+
+        self.summary_writer = None
+        self.states = None
+
+        if not self.sanity_checking:
+            # Set summary writer
+            self.summary_writer = self._get_summary_writer(self.configuration, self.existing_log_dir)
+
+            # Set states of PlanGenerator
+            self.states = self._get_states(self.log_dir)  # FIXME
 
         # Set optimizers
         self.wall_generator_optimizer, self.room_allocator_optimizer = self._get_optimizers(
@@ -139,14 +159,11 @@ class PlanGeneratorTrainer:
         wall_generator_optimizer: torch.optim.Optimizer,
         room_allocator_optimizer: torch.optim.Optimizer,
         train_loader: DataLoader,
-        sanity_checking: bool,
     ):
         wall_generator_loss_sum_train = 0
         room_allocator_loss_sum_train = 0
 
         accumulation_step = configuration.GRADIENT_ACCUMULATION_STEP
-        if sanity_checking is True:
-            accumulation_step = 1
 
         tqdm_iterator = tqdm(enumerate(train_loader), desc="training...", total=len(train_loader))
 
@@ -209,7 +226,123 @@ class PlanGeneratorTrainer:
 
         return wall_generator_loss_avg_validation, room_allocator_loss_avg_validation
 
-    def fit(self, sanity_checking: bool = False):
+    def sanity_check(self, index: int = 77, epochs: int = 200, visualize: bool = False) -> None:
+        """Check sanity that whether the model creates a valid result with the data one"""
+
+        floor, walls, rooms = self.plan_dataset[index]
+
+        floor_batch = floor.unsqueeze(0)
+        walls_batch = walls.unsqueeze(0)
+
+        # To check whether the model is overfitted
+        wall_generator_loss_final = None
+        room_allocator_loss_final = None
+
+        interval = epochs // 20
+
+        for epoch in range(1, epochs + 1):
+            generated_walls, allocated_rooms = self.plan_generator(floor_batch, walls_batch, masking=False)
+
+            wall_generator_loss = self.wall_generator_loss_function(generated_walls, walls_batch)
+            room_allocator_loss = self.room_allocator_loss_function(allocated_rooms, rooms)
+
+            wall_generator_loss.backward()
+            self.wall_generator_optimizer.step()
+            self.wall_generator_optimizer.zero_grad()
+
+            room_allocator_loss.backward()
+            self.room_allocator_optimizer.step()
+            self.room_allocator_optimizer.zero_grad()
+
+            if visualize and (epoch % interval == 0 or epoch == 1):
+                # Mask cells of `generated_walls` where the cells of the floor_batch are 0
+                generated_walls_masked = generated_walls.clone()
+                generated_walls_masked[floor_batch == 0] = 0
+
+                # Mask cells of `allocated_rooms` where the cells of the floor_batch are 0
+                allocated_rooms_masked = allocated_rooms.clone()
+                allocated_rooms_masked[floor_batch.expand_as(allocated_rooms) == 0] = 0
+
+                walls_to_visualize = generated_walls_masked.squeeze(0).squeeze(0)
+                walls_to_visualize = (walls_to_visualize.detach().cpu().numpy() > 0.5).astype(int)
+                walls_to_visualize = np.where(walls_to_visualize == 0, Colors.WHITE.value[0], Colors.BLACK.value[0])
+                walls_to_visualize = self.plan_generator.erode_and_dilate(
+                    [walls_to_visualize], self.configuration.WALL_EROSION_DILATION_KERNEL_SIZE
+                )[0]
+
+                rooms_to_visualize = torch.argmax(allocated_rooms_masked, dim=1).squeeze(0)
+                rooms_to_visualize = rooms_to_visualize.detach().cpu().numpy()
+                rooms_to_visualize = self.plan_generator.erode_and_dilate(
+                    [rooms_to_visualize], self.configuration.ROOM_EROSION_DILATION_KERNEL_SIZE
+                )[0]
+
+                # Create an empty RGB image
+                rooms_channel_3 = np.zeros((*rooms_to_visualize.shape, 3), dtype=np.uint8)
+                rooms_channel_3 += Colors.WHITE.value[0]
+
+                # Map each label to its corresponding color
+                for label, color in Colors.COLOR_MAP_NEW.value.items():
+                    mask = rooms_to_visualize == label
+                    rooms_channel_3[:, :, 0][mask] = color[0]
+                    rooms_channel_3[:, :, 1][mask] = color[1]
+                    rooms_channel_3[:, :, 2][mask] = color[2]
+
+                # Image that combines walls and rooms
+                walls_and_rooms = rooms_channel_3.copy()
+                walls_and_rooms[:, :, 0][walls_to_visualize == 0] = Colors.BLACK.value[0]
+                walls_and_rooms[:, :, 1][walls_to_visualize == 0] = Colors.BLACK.value[1]
+                walls_and_rooms[:, :, 2][walls_to_visualize == 0] = Colors.BLACK.value[2]
+
+                # Create to visualize the target plan
+                walls_np = walls.detach().cpu().numpy().squeeze(0)
+                rooms_np = rooms.detach().cpu().numpy().squeeze(0)
+
+                original_walls_and_rooms_channel_3 = np.zeros((*rooms_to_visualize.shape, 3), dtype=np.uint8)
+                original_walls_and_rooms_channel_3 += Colors.WHITE.value[0]
+
+                original_walls_and_rooms_channel_3[:, :, 0][walls_np == 1] = Colors.BLACK.value[0]
+                original_walls_and_rooms_channel_3[:, :, 1][walls_np == 1] = Colors.BLACK.value[1]
+                original_walls_and_rooms_channel_3[:, :, 2][walls_np == 1] = Colors.BLACK.value[2]
+
+                # Map each label to its corresponding color
+                for label, color in Colors.COLOR_MAP_NEW.value.items():
+                    mask = rooms_np == label
+                    original_walls_and_rooms_channel_3[:, :, 0][mask] = color[0]
+                    original_walls_and_rooms_channel_3[:, :, 1][mask] = color[1]
+                    original_walls_and_rooms_channel_3[:, :, 2][mask] = color[2]
+
+                _, axes = plt.subplots(1, 4, figsize=(21, 7))
+                ax_1, ax_2, ax_3, ax_4 = axes.flatten()
+                ax_1.imshow(walls_to_visualize, cmap="gray")
+                ax_1.axis("off")
+                ax_1.set_title(f"epoch: {epoch}, loss: {wall_generator_loss.item()} \n", fontsize=10)
+
+                ax_2.imshow(rooms_channel_3)
+                ax_2.axis("off")
+                ax_2.set_title(f"epoch: {epoch}, loss: {room_allocator_loss.item()} \n", fontsize=10)
+
+                ax_3.imshow(walls_and_rooms)
+                ax_3.axis("off")
+                ax_3.set_title(f"epoch: {epoch}, merged \n", fontsize=10)
+
+                ax_4.imshow(original_walls_and_rooms_channel_3)
+                ax_4.axis("off")
+                ax_4.set_title("ground truth \n", fontsize=10)
+
+                plt.show()
+
+            if epoch == epochs:
+                wall_generator_loss_final = wall_generator_loss.item()
+                room_allocator_loss_final = room_allocator_loss.item()
+
+        status = f"""
+        wall_generator_loss_final: {wall_generator_loss_final}
+        room_allocator_loss_final: {room_allocator_loss_final}
+        """
+
+        print(status)
+
+    def fit(self) -> None:
         # `wall_generator`-related states
         wall_generator_states = {
             "wall_generator_state_dict": None,
@@ -254,17 +387,15 @@ class PlanGeneratorTrainer:
                 self.wall_generator_optimizer,
                 self.room_allocator_optimizer,
                 self.train_loader,
-                sanity_checking,
             )
 
-            if sanity_checking is True:
-                # Validate
-                wall_generator_loss_avg_validation, room_allocator_loss_avg_validation = self._validate(
-                    self.plan_generator,
-                    self.wall_generator_loss_function,
-                    self.room_allocator_loss_function,
-                    self.validation_loader,
-                )
+            # Validate
+            wall_generator_loss_avg_validation, room_allocator_loss_avg_validation = self._validate(
+                self.plan_generator,
+                self.wall_generator_loss_function,
+                self.room_allocator_loss_function,
+                self.validation_loader,
+            )
 
             # Save states of `wall_generator`
             if wall_generator_loss_avg_validation < wall_generator_initial_loss:
@@ -289,16 +420,3 @@ class PlanGeneratorTrainer:
             torch.save(states, os.path.join(self.log_dir, self.configuration.STATES_PT))
 
             clear_output(wait=True)
-
-
-if __name__ == "__main__":
-    from plan_generator.src.data import PlanDataset
-
-    plan_dataset = PlanDataset(slicer=1)
-    plan_dataloader = PlanDataLoader(plan_dataset, batch_size=1)
-
-    configuration = Configuration()
-    plan_generator = PlanGenerator(configuration=configuration)
-    plan_generator_trainer = PlanGeneratorTrainer(plan_generator=plan_generator, plan_dataloader=plan_dataloader)
-
-    plan_generator_trainer.fit()
