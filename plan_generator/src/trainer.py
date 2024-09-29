@@ -240,7 +240,7 @@ class PlanGeneratorTrainer:
         wall_generator_loss_final = None
         room_allocator_loss_final = None
 
-        interval = epochs // 20
+        interval = max(1, epochs // 20)
 
         for epoch in range(1, epochs + 1):
             generated_walls, allocated_rooms = self.plan_generator(floor_batch, walls_batch, masking=False)
