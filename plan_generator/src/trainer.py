@@ -17,6 +17,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
     sys.path.append(os.path.abspath(os.path.join(__file__, "../../../")))
 
+from plan_generator.src.utils import runtime_calculator
 from plan_generator.src.enums import Colors
 from plan_generator.src.config import Configuration
 from plan_generator.src.data import PlanDataLoader, PlanDataset
@@ -226,6 +227,7 @@ class PlanGeneratorTrainer:
 
         return wall_generator_loss_avg_validation, room_allocator_loss_avg_validation
 
+    @runtime_calculator
     def sanity_check(self, index: int = 77, epochs: int = 200, visualize: bool = False) -> None:
         """Check sanity that whether the model creates a valid result with the data one"""
 
