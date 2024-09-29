@@ -83,7 +83,6 @@ class UNetDecoder(nn.Module):
         decoder_blocks = nn.ModuleList([])
         decoder_blocks += [
             nn.Conv2d(self.channels_step[i - 1] * 2, self.channels_step[i - 1], kernel_size=3, padding=1)
-            # nn.Conv2d(self.channels_step[i], self.channels_step[i - 1], kernel_size=3, padding=1)
             for i in range(len(self.channels_step) - 1, 0, -1)
         ]
 
