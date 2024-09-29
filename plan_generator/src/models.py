@@ -48,7 +48,7 @@ class UNetDecoder(nn.Module):
 
         self.encoder_blocks = self._create_unet_encoder_blocks()
         self.upconv_blocks = self._create_unet_upconv_blocks()
-        self.decoer_blocks = self._create_unet_decoder_blocks()
+        self.decoder_blocks = self._create_unet_decoder_blocks()
 
     def _encoder_block(self, in_channels: int, out_channels: int) -> nn.Sequential:
         return nn.Sequential(
@@ -103,10 +103,10 @@ class UNetDecoder(nn.Module):
         decoded = []
         for uci, upconv_block in enumerate(self.upconv_blocks):
             x = torch.cat([upconv_block(x), encoded[len(encoded) - uci - 2]], dim=1)
-            x = self.decoer_blocks[uci](x)
+            x = self.decoder_blocks[uci](x)
             decoded.append(x)
 
-        x = self.decoer_blocks[-1](x)
+        x = self.decoder_blocks[-1](x)
 
         return x
 
