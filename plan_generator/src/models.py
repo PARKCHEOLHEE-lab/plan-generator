@@ -284,10 +284,13 @@ class PlanGenerator(nn.Module):
 
         return processed
 
-    @torch.no_grad
-    def infer(self):
-        self.eval()
+    # @torch.no_grad
+    # def infer(self, floor_batch: torch.Tensor):
+    #     self.eval()
 
-        self.train()
+    #     generated_walls = self.wall_generator(floor_batch)
+    #     allocated_rooms = self.room_allocator(generated_walls)
 
-        return
+    #     self.train()
+
+    #     return
