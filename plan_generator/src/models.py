@@ -235,6 +235,8 @@ class PlanGenerator(nn.Module):
             encoder_repeat=self.configuration.WALL_GENERATOR_REPEAT,
         )
 
+        self.wall_generator.to(self.configuration.DEVICE)
+
         self.room_allocator = RoomAllocator(
             in_channels=self.configuration.ROOM_ALLOCATOR_IN_CHANNELS,
             out_channels=self.configuration.ROOM_ALLOCATOR_OUT_CHANNELS,
@@ -242,6 +244,10 @@ class PlanGenerator(nn.Module):
             channels_step=self.configuration.ROOM_ALLOCATOR_CHANNELS_STEP,
             encoder_repeat=self.configuration.ROOM_ALLOCATOR_REPEAT,
         )
+
+        self.room_allocator.to(self.configuration.DEVICE)
+
+        self.to(self.configuration.DEVICE)
 
     def forward(
         self, floor_batch: torch.Tensor, walls_batch: torch.Tensor, masking: bool = False
