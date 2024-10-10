@@ -123,7 +123,8 @@ class PlanDataCreator(PlanDataCreatorHelper):
 class PlanDataset(Dataset):
     """Plan dataset"""
 
-    def __init__(self, slicer=int(1e10), use_transform: bool = True):
+    def __init__(self, configuration: Configuration, slicer=int(1e10), use_transform: bool = True):
+        self.configuration = configuration
         self.slicer = slicer
         self.use_transform = use_transform
 
@@ -134,6 +135,8 @@ class PlanDataset(Dataset):
         self.local_random = random.Random()
         self.transform_mirroring = TransformMirroring()
         self.transform_rotating = TransformRotating()
+
+        torch.multiprocessing.set_start_method("spawn", force=True)
 
     def __len__(self) -> int:
         return len(self.dataset_paths)
@@ -169,7 +172,11 @@ class PlanDataset(Dataset):
         if self.use_transform and rotation_multiplier in (1, 2, 3):
             floor, walls, rooms = self.transform_rotating((floor, walls, rooms), rotation_multiplier)
 
-        return floor, walls, rooms.long()
+        return (
+            floor.to(self.configuration.DEVICE),
+            walls.to(self.configuration.DEVICE),
+            rooms.long().to(self.configuration.DEVICE),
+        )
 
 
 class PlanDataLoader:
