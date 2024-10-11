@@ -29,11 +29,13 @@ class PlanGeneratorTrainer:
 
     def __init__(
         self,
+        configuration: Configuration,
         plan_generator: PlanGenerator,
         plan_dataset: PlanDataset,
         existing_log_dir: Optional[str] = None,
         sanity_checking: bool = False,
     ):
+        self.configuration = configuration
         self.plan_generator = plan_generator
         self.plan_dataset = plan_dataset
         self.existing_log_dir = existing_log_dir
@@ -43,6 +45,11 @@ class PlanGeneratorTrainer:
             self.plan_dataset.use_transform = False
 
         self.configuration.set_seed()
+
+        is_multi_gpus = not self.sanity_checking and torch.cuda.device_count() > 1
+        if is_multi_gpus:
+            self.plan_generator = nn.DataParallel(self.plan_generator)
+            self.plan_generator = self.plan_generator.to(self.configuration.DEVICE)
 
         self.plan_dataloader = PlanDataLoader(self.plan_dataset)
 
@@ -58,7 +65,9 @@ class PlanGeneratorTrainer:
 
         # Set optimizers
         self.wall_generator_optimizer, self.room_allocator_optimizer = self._get_optimizers(
-            self.plan_generator.wall_generator, self.plan_generator.room_allocator, self.configuration
+            self.plan_generator.module.wall_generator if is_multi_gpus else self.plan_generator.wall_generator,
+            self.plan_generator.module.room_allocator if is_multi_gpus else self.plan_generator.room_allocator,
+            self.configuration,
         )
 
         # Set schedulers
@@ -68,10 +77,6 @@ class PlanGeneratorTrainer:
 
         # Set loss functions
         self.wall_generator_loss_function, self.room_allocator_loss_function = self._get_loss_functions()
-
-    @property
-    def configuration(self):
-        return self.plan_generator.configuration
 
     @property
     def train_loader(self):
