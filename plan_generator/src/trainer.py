@@ -451,8 +451,8 @@ class PlanGeneratorTrainer:
         epoch_start = self.states["epoch"]
         epoch_end = self.configuration.EPOCHS + 1
 
-        wall_generator_initial_loss = torch.inf
-        room_allocator_initial_loss = torch.inf
+        wall_generator_current_loss = torch.inf
+        room_allocator_current_loss = torch.inf
         wall_generator_loss_avg_validation = torch.inf
         room_allocator_loss_avg_validation = torch.inf
 
@@ -481,22 +481,36 @@ class PlanGeneratorTrainer:
             )
 
             # Update states of `wall_generator` if validation loss is decreased
-            is_wall_generator_improved = wall_generator_loss_avg_validation < wall_generator_initial_loss
+            is_wall_generator_improved = wall_generator_loss_avg_validation < wall_generator_current_loss
             if is_wall_generator_improved:
+                wall_generator_current_loss = wall_generator_loss_avg_validation
+                wall_generator = (
+                    self.plan_generator.module.wall_generator
+                    if self.is_multi_gpus
+                    else self.plan_generator.wall_generator
+                )
+
                 w_states = self.states["wall_generator_states"]
                 w_states["wall_generator_loss_avg_train"] = wall_generator_loss_avg_train
                 w_states["wall_generator_loss_avg_validation"] = wall_generator_loss_avg_validation
-                w_states["wall_generator_state_dict"] = self.plan_generator.wall_generator.state_dict()
+                w_states["wall_generator_state_dict"] = wall_generator.state_dict()
                 w_states["wall_generator_optimizer_state_dict"] = self.wall_generator_optimizer.state_dict()
                 w_states["wall_generator_scheduler_state_dict"] = self.wall_generator_scheduler.state_dict()
 
             # Update states of `room_allocator` if validation loss is decreased
-            is_room_allocator_improved = room_allocator_loss_avg_validation < room_allocator_initial_loss
+            is_room_allocator_improved = room_allocator_loss_avg_validation < room_allocator_current_loss
             if is_room_allocator_improved:
+                room_allocator_current_loss = room_allocator_loss_avg_validation
+                room_allocator = (
+                    self.plan_generator.module.room_allocator
+                    if self.is_multi_gpus
+                    else self.plan_generator.room_allocator
+                )
+
                 r_states = self.states["room_allocator_states"]
                 r_states["room_allocator_loss_avg_train"] = room_allocator_loss_avg_train
                 r_states["room_allocator_loss_avg_validation"] = room_allocator_loss_avg_validation
-                r_states["room_allocator_state_dict"] = self.plan_generator.room_allocator.state_dict()
+                r_states["room_allocator_state_dict"] = room_allocator.state_dict()
                 r_states["room_allocator_optimizer_state_dict"] = self.wall_generator_optimizer.state_dict()
                 r_states["room_allocator_scheduler_state_dict"] = self.room_allocator_scheduler.state_dict()
 
