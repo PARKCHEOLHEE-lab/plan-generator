@@ -110,9 +110,33 @@ class PlanGeneratorTrainer:
 
         return summary_writer
 
-    def _get_states(self, log_dir: str):
-        print(log_dir)  # FIXME: Use log_dir to load states dict of model trained
-        states = {}
+    def _get_states(self, _: str):
+        # `wall_generator`-related states
+        wall_generator_states = {
+            "wall_generator_state_dict": None,
+            "wall_generator_optimizer_state_dict": None,
+            "wall_generator_scheduler_state_dict": None,
+            "wall_generator_loss_avg_train": None,
+            "wall_generator_loss_avg_validation": None,
+        }
+
+        # `room_allocator`-related states
+        room_allocator_states = {
+            "room_allocator_state_dict": None,
+            "room_allocator_optimizer_state_dict": None,
+            "room_allocator_scheduler_state_dict": None,
+            "room_allocator_loss_avg_train": None,
+            "room_allocator_loss_avg_validation": None,
+        }
+
+        # states merged
+        states = {
+            "epoch": 1,
+            "configuration": self.configuration.to_dict(),
+            "wall_generator_states": wall_generator_states,
+            "room_allocator_states": room_allocator_states,
+        }
+
         return states
 
     def _get_optimizers(
