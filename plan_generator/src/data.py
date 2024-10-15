@@ -4,7 +4,6 @@ import cv2
 import random
 import pickle
 import torch
-import functools
 import numpy as np
 import multiprocessing
 
@@ -139,10 +138,6 @@ class PlanDataset(Dataset):
 
         torch.multiprocessing.set_start_method("spawn", force=True)
 
-    @functools.lru_cache(maxsize=len(os.listdir(Configuration.DATA_SAVE_DIR)))
-    def _load_item(self, index):
-        return torch.load(self.dataset_paths[index])
-
     def __len__(self) -> int:
         return len(self.dataset_paths)
 
@@ -161,7 +156,7 @@ class PlanDataset(Dataset):
             3: 270 degree
         """
 
-        floor, walls, rooms = self._load_item(index)
+        floor, walls, rooms = torch.load(self.dataset_paths[index])
 
         floor = floor.unsqueeze(0)
         walls = walls.unsqueeze(0)
