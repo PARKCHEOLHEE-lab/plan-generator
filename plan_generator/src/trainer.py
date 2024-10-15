@@ -310,8 +310,71 @@ class PlanGeneratorTrainer:
 
     #     plan_generator.train()
 
-    def _visualize_one(self, generated_walls: torch.Tensor = None, allocated_rooms: torch.Tensor = None):
-        return
+    def _visualize_one(
+        self,
+        walls: torch.Tensor,
+        rooms: torch.Tensor,
+        floor_batch: torch.Tensor,
+        generated_walls: torch.Tensor,
+        allocated_rooms: torch.Tensor,
+    ) -> np.ndarray:
+        # Mask cells of `generated_walls` where the cells of the floor_batch are 0
+        generated_walls_masked = generated_walls.clone()
+        generated_walls_masked[floor_batch == 0] = 0
+
+        # Mask cells of `allocated_rooms` where the cells of the floor_batch are 0
+        allocated_rooms_masked = allocated_rooms.clone()
+        allocated_rooms_masked[floor_batch.expand_as(allocated_rooms) == 0] = 0
+
+        walls_to_visualize = generated_walls_masked.squeeze(0).squeeze(0)
+        walls_to_visualize = (walls_to_visualize.detach().cpu().numpy() > 0.5).astype(int)
+        walls_to_visualize = np.where(walls_to_visualize == 0, Colors.WHITE.value[0], Colors.BLACK.value[0])
+        walls_to_visualize = self.plan_generator.erode_and_dilate(
+            [walls_to_visualize], self.configuration.WALL_EROSION_DILATION_KERNEL_SIZE
+        )[0]
+
+        rooms_to_visualize = torch.argmax(allocated_rooms_masked, dim=1).squeeze(0)
+        rooms_to_visualize = rooms_to_visualize.detach().cpu().numpy()
+        rooms_to_visualize = self.plan_generator.erode_and_dilate(
+            [rooms_to_visualize], self.configuration.ROOM_EROSION_DILATION_KERNEL_SIZE
+        )[0]
+
+        # Create an empty RGB image
+        rooms_channel_3 = np.zeros((*rooms_to_visualize.shape, 3), dtype=np.uint8)
+        rooms_channel_3 += Colors.WHITE.value[0]
+
+        # Map each label to its corresponding color
+        for label, color in Colors.COLOR_MAP_NEW.value.items():
+            mask = rooms_to_visualize == label
+            rooms_channel_3[:, :, 0][mask] = color[0]
+            rooms_channel_3[:, :, 1][mask] = color[1]
+            rooms_channel_3[:, :, 2][mask] = color[2]
+
+        # Image that combines walls and rooms
+        walls_and_rooms = rooms_channel_3.copy()
+        walls_and_rooms[:, :, 0][walls_to_visualize == 0] = Colors.BLACK.value[0]
+        walls_and_rooms[:, :, 1][walls_to_visualize == 0] = Colors.BLACK.value[1]
+        walls_and_rooms[:, :, 2][walls_to_visualize == 0] = Colors.BLACK.value[2]
+
+        # Create to visualize the target plan
+        walls_np = walls.detach().cpu().numpy().squeeze(0)
+        rooms_np = rooms.detach().cpu().numpy().squeeze(0)
+
+        original_walls_and_rooms_channel_3 = np.zeros((*rooms_to_visualize.shape, 3), dtype=np.uint8)
+        original_walls_and_rooms_channel_3 += Colors.WHITE.value[0]
+
+        original_walls_and_rooms_channel_3[:, :, 0][walls_np == 1] = Colors.BLACK.value[0]
+        original_walls_and_rooms_channel_3[:, :, 1][walls_np == 1] = Colors.BLACK.value[1]
+        original_walls_and_rooms_channel_3[:, :, 2][walls_np == 1] = Colors.BLACK.value[2]
+
+        # Map each label to its corresponding color
+        for label, color in Colors.COLOR_MAP_NEW.value.items():
+            mask = rooms_np == label
+            original_walls_and_rooms_channel_3[:, :, 0][mask] = color[0]
+            original_walls_and_rooms_channel_3[:, :, 1][mask] = color[1]
+            original_walls_and_rooms_channel_3[:, :, 2][mask] = color[2]
+
+        return walls_to_visualize, rooms_channel_3, walls_and_rooms, original_walls_and_rooms_channel_3
 
     @runtime_calculator
     def sanity_check(self, index: int = 77, epochs: int = 200, visualize: bool = False) -> None:
@@ -343,61 +406,12 @@ class PlanGeneratorTrainer:
             self.room_allocator_optimizer.zero_grad()
 
             if visualize and (epoch % interval == 0 or epoch == 1):
-                # Mask cells of `generated_walls` where the cells of the floor_batch are 0
-                generated_walls_masked = generated_walls.clone()
-                generated_walls_masked[floor_batch == 0] = 0
-
-                # Mask cells of `allocated_rooms` where the cells of the floor_batch are 0
-                allocated_rooms_masked = allocated_rooms.clone()
-                allocated_rooms_masked[floor_batch.expand_as(allocated_rooms) == 0] = 0
-
-                walls_to_visualize = generated_walls_masked.squeeze(0).squeeze(0)
-                walls_to_visualize = (walls_to_visualize.detach().cpu().numpy() > 0.5).astype(int)
-                walls_to_visualize = np.where(walls_to_visualize == 0, Colors.WHITE.value[0], Colors.BLACK.value[0])
-                walls_to_visualize = self.plan_generator.erode_and_dilate(
-                    [walls_to_visualize], self.configuration.WALL_EROSION_DILATION_KERNEL_SIZE
-                )[0]
-
-                rooms_to_visualize = torch.argmax(allocated_rooms_masked, dim=1).squeeze(0)
-                rooms_to_visualize = rooms_to_visualize.detach().cpu().numpy()
-                rooms_to_visualize = self.plan_generator.erode_and_dilate(
-                    [rooms_to_visualize], self.configuration.ROOM_EROSION_DILATION_KERNEL_SIZE
-                )[0]
-
-                # Create an empty RGB image
-                rooms_channel_3 = np.zeros((*rooms_to_visualize.shape, 3), dtype=np.uint8)
-                rooms_channel_3 += Colors.WHITE.value[0]
-
-                # Map each label to its corresponding color
-                for label, color in Colors.COLOR_MAP_NEW.value.items():
-                    mask = rooms_to_visualize == label
-                    rooms_channel_3[:, :, 0][mask] = color[0]
-                    rooms_channel_3[:, :, 1][mask] = color[1]
-                    rooms_channel_3[:, :, 2][mask] = color[2]
-
-                # Image that combines walls and rooms
-                walls_and_rooms = rooms_channel_3.copy()
-                walls_and_rooms[:, :, 0][walls_to_visualize == 0] = Colors.BLACK.value[0]
-                walls_and_rooms[:, :, 1][walls_to_visualize == 0] = Colors.BLACK.value[1]
-                walls_and_rooms[:, :, 2][walls_to_visualize == 0] = Colors.BLACK.value[2]
-
-                # Create to visualize the target plan
-                walls_np = walls.detach().cpu().numpy().squeeze(0)
-                rooms_np = rooms.detach().cpu().numpy().squeeze(0)
-
-                original_walls_and_rooms_channel_3 = np.zeros((*rooms_to_visualize.shape, 3), dtype=np.uint8)
-                original_walls_and_rooms_channel_3 += Colors.WHITE.value[0]
-
-                original_walls_and_rooms_channel_3[:, :, 0][walls_np == 1] = Colors.BLACK.value[0]
-                original_walls_and_rooms_channel_3[:, :, 1][walls_np == 1] = Colors.BLACK.value[1]
-                original_walls_and_rooms_channel_3[:, :, 2][walls_np == 1] = Colors.BLACK.value[2]
-
-                # Map each label to its corresponding color
-                for label, color in Colors.COLOR_MAP_NEW.value.items():
-                    mask = rooms_np == label
-                    original_walls_and_rooms_channel_3[:, :, 0][mask] = color[0]
-                    original_walls_and_rooms_channel_3[:, :, 1][mask] = color[1]
-                    original_walls_and_rooms_channel_3[:, :, 2][mask] = color[2]
+                (
+                    walls_to_visualize,
+                    rooms_channel_3,
+                    walls_and_rooms,
+                    original_walls_and_rooms_channel_3,
+                ) = self._visualize_one(walls, rooms, floor_batch, generated_walls, allocated_rooms)
 
                 _, axes = plt.subplots(1, 4, figsize=(21, 7))
                 ax_1, ax_2, ax_3, ax_4 = axes.flatten()
