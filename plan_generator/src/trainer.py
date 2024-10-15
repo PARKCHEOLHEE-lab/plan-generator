@@ -48,8 +48,8 @@ class PlanGeneratorTrainer:
 
         self.configuration.set_seed()
 
-        is_multi_gpus = not self.sanity_checking and torch.cuda.device_count() > 1
-        if is_multi_gpus:
+        self.is_multi_gpus = not self.sanity_checking and torch.cuda.device_count() > 1
+        if self.is_multi_gpus:
             self.plan_generator = nn.DataParallel(self.plan_generator)
             self.plan_generator = self.plan_generator.to(self.configuration.DEVICE)
 
@@ -68,8 +68,8 @@ class PlanGeneratorTrainer:
 
         # Set optimizers
         self.wall_generator_optimizer, self.room_allocator_optimizer = self._get_optimizers(
-            self.plan_generator.module.wall_generator if is_multi_gpus else self.plan_generator.wall_generator,
-            self.plan_generator.module.room_allocator if is_multi_gpus else self.plan_generator.room_allocator,
+            self.plan_generator.module.wall_generator if self.is_multi_gpus else self.plan_generator.wall_generator,
+            self.plan_generator.module.room_allocator if self.is_multi_gpus else self.plan_generator.room_allocator,
             self.configuration,
         )
 
