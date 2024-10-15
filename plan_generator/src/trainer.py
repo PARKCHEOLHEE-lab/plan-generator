@@ -1,5 +1,6 @@
 import os
 import sys
+import pytz
 import torch
 import datetime
 import numpy as np
@@ -104,7 +105,9 @@ class PlanGeneratorTrainer:
             SummaryWriter: _description_
         """
 
-        log_dir = os.path.join(configuration.LOG_DIR, datetime.datetime.now().strftime("%m-%d-%Y__%H-%M-%S"))
+        log_dir = os.path.join(
+            configuration.LOG_DIR, datetime.datetime.now(pytz.timezone("Asia/Seoul")).strftime("%m-%d-%Y__%H-%M-%S")
+        )
 
         if existing_log_dir is not None:
             log_dir = existing_log_dir
