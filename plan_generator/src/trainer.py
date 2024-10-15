@@ -6,11 +6,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 from IPython.display import clear_output
 
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
@@ -34,12 +34,14 @@ class PlanGeneratorTrainer:
         plan_dataset: PlanDataset,
         existing_log_dir: Optional[str] = None,
         sanity_checking: bool = False,
+        train_loader_subset_count: int = 1,
     ):
         self.configuration = configuration
         self.plan_generator = plan_generator
         self.plan_dataset = plan_dataset
         self.existing_log_dir = existing_log_dir
         self.sanity_checking = sanity_checking
+        self.train_loader_subset_count = train_loader_subset_count
 
         if self.sanity_checking:
             self.plan_dataset.use_transform = False
@@ -52,6 +54,7 @@ class PlanGeneratorTrainer:
             self.plan_generator = self.plan_generator.to(self.configuration.DEVICE)
 
         self.plan_dataloader = PlanDataLoader(self.plan_dataset)
+        self.train_loader_subsets = self._get_train_loader_subsets(train_loader_subset_count, self.plan_dataloader)
 
         self.summary_writer = None
         self.states = None
@@ -180,6 +183,41 @@ class PlanGeneratorTrainer:
 
         return wall_generator_loss_function, room_allocator_loss_function
 
+    def _get_train_loader_subsets(
+        self, train_loader_subset_count: int, plan_dataloader: PlanDataLoader
+    ) -> List[Subset]:
+        train_loader_subsets = [plan_dataloader.train_loader]
+        if train_loader_subset_count > 1:
+            train_loader_dataset_size = len(plan_dataloader.train_loader.dataset)
+            train_loader_indices = list(range(train_loader_dataset_size))
+            np.random.shuffle(train_loader_indices)
+
+            subset_divider = train_loader_dataset_size // train_loader_subset_count
+            train_loader_subsets = []
+            for subset_count in range(train_loader_subset_count):
+                subset_start = subset_count * subset_divider
+                subset_end = (subset_count + 1) * subset_divider
+
+                if subset_count == train_loader_subset_count - 1:
+                    subset_end = train_loader_dataset_size
+
+                train_loader_subset = Subset(
+                    plan_dataloader.train_loader.dataset, train_loader_indices[subset_start:subset_end]
+                )
+
+                train_loader = DataLoader(
+                    dataset=train_loader_subset,
+                    batch_size=plan_dataloader.train_loader.batch_size,
+                    num_workers=int(os.cpu_count() * 0.7),
+                    shuffle=True,
+                    drop_last=True,
+                    persistent_workers=True,
+                )
+
+                train_loader_subsets.append(train_loader)
+
+        return train_loader_subsets
+
     def _train(
         self,
         configuration: Configuration,
@@ -199,7 +237,7 @@ class PlanGeneratorTrainer:
 
         for batch_index, (floor_batch, walls_batch, rooms_batch) in tqdm_iterator:
             # Forward propagation
-            generated_walls_masked, allocated_rooms_masked = plan_generator(floor_batch, walls_batch, masking=True)
+            generated_walls_masked, allocated_rooms_masked = plan_generator(floor_batch, walls_batch, masking=False)
 
             # Compute wall generator loss
             wall_generator_loss = wall_generator_loss_function(generated_walls_masked, walls_batch)
@@ -234,13 +272,13 @@ class PlanGeneratorTrainer:
         validation_loader: DataLoader,
     ):
         # Set mode to eval()
-        self.plan_generator.eval()
+        plan_generator.eval()
 
         wall_generator_loss_sum_validation = 0
         room_allocator_loss_sum_validation = 0
 
         for floor_batch, walls_batch, rooms_batch in tqdm(validation_loader, desc="validating..."):
-            generated_walls_masked, allocated_rooms_masked = plan_generator(floor_batch, walls_batch, masking=True)
+            generated_walls_masked, allocated_rooms_masked = plan_generator(floor_batch, walls_batch, masking=False)
 
             wall_generator_loss = wall_generator_loss_function(generated_walls_masked, walls_batch)
             wall_generator_loss_sum_validation += wall_generator_loss.item()
@@ -252,9 +290,28 @@ class PlanGeneratorTrainer:
         room_allocator_loss_avg_validation = room_allocator_loss_sum_validation / len(validation_loader)
 
         # Re-set mode to train()
-        self.plan_generator.train()
+        plan_generator.train()
 
         return wall_generator_loss_avg_validation, room_allocator_loss_avg_validation
+
+    # @torch.no_grad
+    # def _write(
+    #     self,
+    #     plan_generator: PlanGenerator,
+    #     summary_writer: SummaryWriter,
+    #     train_loader: DataLoader,
+    #     validation_loader: DataLoader,
+    #     num_to_visualize: int = 2,
+    # ) -> None:
+    #     plan_generator.eval()
+
+    #     train_samples_indices = torch.randperm(len(train_loader.dataset))[:num_to_visualize]
+    #     validation_samples_indices = torch.randperm(len(validation_loader.dataset))[:num_to_visualize]
+
+    #     plan_generator.train()
+
+    def _visualize_one(self, generated_walls: torch.Tensor = None, allocated_rooms: torch.Tensor = None):
+        return
 
     @runtime_calculator
     def sanity_check(self, index: int = 77, epochs: int = 200, visualize: bool = False) -> None:
@@ -374,41 +431,19 @@ class PlanGeneratorTrainer:
         print(status)
 
     def fit(self) -> None:
-        # `wall_generator`-related states
-        wall_generator_states = {
-            "wall_generator_state_dict": None,
-            "wall_generator_optimizer_state_dict": None,
-            "wall_generator_scheduler_state_dict": None,
-            "wall_generator_loss_avg_train": None,
-            "wall_generator_loss_avg_validation": None,
-        }
-
-        # `room_allocator`-related states
-        room_allocator_states = {
-            "room_allocator_state_dict": None,
-            "room_allocator_optimizer_state_dict": None,
-            "room_allocator_scheduler_state_dict": None,
-            "room_allocator_loss_avg_train": None,
-            "room_allocator_loss_avg_validation": None,
-        }
-
-        # states merged
-        states = {
-            "epoch": 1,
-            "configuration": self.configuration.to_dict(),
-            "wall_generator_states": wall_generator_states,
-            "room_allocator_states": room_allocator_states,
-        }
-
-        # epoch_start = 1
-        # epoch_end = self.configuration.EPOCHS + 1
+        epoch_start = self.states["epoch"]
+        epoch_end = self.configuration.EPOCHS + 1
 
         wall_generator_initial_loss = torch.inf
         room_allocator_initial_loss = torch.inf
         wall_generator_loss_avg_validation = torch.inf
         room_allocator_loss_avg_validation = torch.inf
 
-        for epoch in range(1, self.configuration.EPOCHS + 1):
+        for epoch in range(epoch_start, epoch_end):
+            train_loader_subset_index = (epoch - 1) % len(self.train_loader_subsets)
+            train_loader_subset = self.train_loader_subsets[train_loader_subset_index]
+            print(f"train_loader_subset_index: {train_loader_subset_index}/{len(self.train_loader_subsets) - 1}")
+
             # Train
             wall_generator_loss_avg_train, room_allocator_loss_avg_train = self._train(
                 self.configuration,
@@ -417,7 +452,7 @@ class PlanGeneratorTrainer:
                 self.room_allocator_loss_function,
                 self.wall_generator_optimizer,
                 self.room_allocator_optimizer,
-                self.train_loader,
+                train_loader_subset,
             )
 
             # Validate
@@ -428,26 +463,48 @@ class PlanGeneratorTrainer:
                 self.validation_loader,
             )
 
-            # Save states of `wall_generator`
-            if wall_generator_loss_avg_validation < wall_generator_initial_loss:
-                w_states = states["wall_generator_states"]
+            # Update states of `wall_generator` if validation loss is decreased
+            is_wall_generator_improved = wall_generator_loss_avg_validation < wall_generator_initial_loss
+            if is_wall_generator_improved:
+                w_states = self.states["wall_generator_states"]
                 w_states["wall_generator_loss_avg_train"] = wall_generator_loss_avg_train
                 w_states["wall_generator_loss_avg_validation"] = wall_generator_loss_avg_validation
                 w_states["wall_generator_state_dict"] = self.plan_generator.wall_generator.state_dict()
                 w_states["wall_generator_optimizer_state_dict"] = self.wall_generator_optimizer.state_dict()
                 w_states["wall_generator_scheduler_state_dict"] = self.wall_generator_scheduler.state_dict()
 
-            # Save states of `room_allocator`
-            if room_allocator_loss_avg_validation < room_allocator_initial_loss:
-                r_states = states["room_allocator_states"]
+            # Update states of `room_allocator` if validation loss is decreased
+            is_room_allocator_improved = room_allocator_loss_avg_validation < room_allocator_initial_loss
+            if is_room_allocator_improved:
+                r_states = self.states["room_allocator_states"]
                 r_states["room_allocator_loss_avg_train"] = room_allocator_loss_avg_train
                 r_states["room_allocator_loss_avg_validation"] = room_allocator_loss_avg_validation
                 r_states["room_allocator_state_dict"] = self.plan_generator.room_allocator.state_dict()
                 r_states["room_allocator_optimizer_state_dict"] = self.wall_generator_optimizer.state_dict()
                 r_states["room_allocator_scheduler_state_dict"] = self.room_allocator_scheduler.state_dict()
 
-            states["epoch"] = epoch
-
-            torch.save(states, os.path.join(self.log_dir, self.configuration.STATES_PT))
+            # Save states if any validation losses have decreased
+            if is_wall_generator_improved or is_room_allocator_improved:
+                torch.save(self.states, os.path.join(self.log_dir, self.configuration.STATES_PT))
+            else:
+                self.states = torch.load(os.path.join(self.log_dir, self.configuration.STATES_PT))
+                self.states["epoch"] = epoch
+                torch.save(self.states, os.path.join(self.log_dir, self.configuration.STATES_PT))
 
             clear_output(wait=True)
+
+
+if __name__ == "__main__":
+    configuration = Configuration()
+
+    plan_dataset = PlanDataset(configuration=configuration)
+    plan_generator = PlanGenerator(configuration=configuration)
+
+    plan_generator_trainer = PlanGeneratorTrainer(
+        configuration=configuration,
+        plan_generator=plan_generator,
+        plan_dataset=plan_dataset,
+        train_loader_subset_count=20,
+    )
+
+    plan_generator_trainer.fit()
