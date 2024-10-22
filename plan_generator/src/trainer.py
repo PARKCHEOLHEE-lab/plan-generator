@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 from IPython.display import clear_output
 
 from torch import nn
@@ -94,12 +94,12 @@ class PlanGeneratorTrainer:
     def log_dir(self):
         return self.summary_writer.log_dir
 
-    def _get_summary_writer(self, configuration: Configuration, existing_log_dir: str) -> SummaryWriter:
+    def _get_summary_writer(self, configuration: Configuration, existing_log_dir: Union[str, None]) -> SummaryWriter:
         """Create tensorboard SummaryWriter
 
         Args:
             configuration (Configuration): _description_
-            existing_log_dir (str): _description_
+            existing_log_dir (Union[str, None]): _description_
 
         Returns:
             SummaryWriter: _description_
@@ -109,7 +109,7 @@ class PlanGeneratorTrainer:
             configuration.LOG_DIR, datetime.datetime.now(pytz.timezone("Asia/Seoul")).strftime("%m-%d-%Y__%H-%M-%S")
         )
 
-        if existing_log_dir is not None:
+        if existing_log_dir is not None and configuration.STATES_PT in os.listdir(existing_log_dir):
             log_dir = existing_log_dir
 
         summary_writer = SummaryWriter(log_dir=log_dir)
