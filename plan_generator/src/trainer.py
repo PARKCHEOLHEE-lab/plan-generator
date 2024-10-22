@@ -95,14 +95,14 @@ class PlanGeneratorTrainer:
         return self.summary_writer.log_dir
 
     def _get_summary_writer(self, configuration: Configuration, existing_log_dir: Union[str, None]) -> SummaryWriter:
-        """Create tensorboard SummaryWriter
+        """Create tensorboard SummaryWriter. If existing_log_dir is vliad, use it
 
         Args:
-            configuration (Configuration): _description_
-            existing_log_dir (Union[str, None]): _description_
+            configuration (Configuration): preset configuration
+            existing_log_dir (Union[str, None]): existing log dir created by SummaryWriter
 
         Returns:
-            SummaryWriter: _description_
+            SummaryWriter: tensorboard SummaryWriter
         """
 
         log_dir = os.path.join(
@@ -117,14 +117,14 @@ class PlanGeneratorTrainer:
         return summary_writer
 
     def _get_states(self, configuration: Configuration, log_dir: str) -> dict:
-        """_summary_
+        """Define states dict
 
         Args:
-            configuration (Configuration): _description_
-            log_dir (str): _description_
+            configuration (Configuration): preset configuration
+            log_dir (str): directory path for logging
 
         Returns:
-            dict: _description_
+            dict: states to store all results
         """
 
         if configuration.STATES_PT in os.listdir(log_dir):
@@ -151,16 +151,16 @@ class PlanGeneratorTrainer:
 
     def _get_optimizers(
         self, wall_generator: WallGenerator, room_allocator: RoomAllocator, configuration: Configuration
-    ) -> Tuple[torch.optim.Optimizer, torch.optim.Optimizer]:
-        """_summary_
+    ) -> Tuple[torch.optim.Optimizer]:
+        """Define optimizers. If the given states have optimizers' state_dict, they are overwritten.
 
         Args:
-            wall_generator (WallGenerator): _description_
-            room_allocator (RoomAllocator): _description_
-            configuration (Configuration): _description_
+            wall_generator (WallGenerator): wall_generator model
+            room_allocator (RoomAllocator): room_allocator model
+            configuration (Configuration): preset configuration
 
         Returns:
-            Tuple[torch.optim.Optimizer, torch.optim.Optimizer]: _description_
+            Tuple[torch.optim.Optimizer]: optimizers
         """
 
         wall_generator_optimizer = torch.optim.Adam(
@@ -188,7 +188,18 @@ class PlanGeneratorTrainer:
         wall_generator_optimizer: torch.optim.Optimizer,
         room_allocator_optimizer: torch.optim.Optimizer,
         configuration: Configuration,
-    ) -> Tuple[ReduceLROnPlateau, ReduceLROnPlateau]:
+    ) -> Tuple[ReduceLROnPlateau]:
+        """Define schedulers
+
+        Args:
+            wall_generator_optimizer (torch.optim.Optimizer): wall_generator optimizer
+            room_allocator_optimizer (torch.optim.Optimizer): room_allocator optimizer
+            configuration (Configuration): preset configuration
+
+        Returns:
+            Tuple[ReduceLROnPlateau]: schedulers
+        """
+
         wall_generator_scheduler = ReduceLROnPlateau(
             wall_generator_optimizer,
             factor=configuration.WALL_GENERATOR_LEARNING_RATE_DECAY_FACTOR,
@@ -205,7 +216,13 @@ class PlanGeneratorTrainer:
 
         return wall_generator_scheduler, room_allocator_scheduler
 
-    def _get_loss_functions(self) -> Tuple[nn.Module, nn.Module]:
+    def _get_loss_functions(self) -> Tuple[nn.Module]:
+        """Define loss functions to train the model
+
+        Returns:
+            Tuple[nn.Module]: loss functions
+        """
+
         wall_generator_loss_function = nn.BCELoss()
         room_allocator_loss_function = nn.CrossEntropyLoss()
 
@@ -214,6 +231,16 @@ class PlanGeneratorTrainer:
     def _get_train_loader_subsets(
         self, train_loader_subset_count: int, plan_dataloader: PlanDataLoader
     ) -> List[Subset]:
+        """Divide the training dataloader to subsets with the number of `train_loader_subset_count`
+
+        Args:
+            train_loader_subset_count (int): count to divide
+            plan_dataloader (PlanDataLoader): dataloader
+
+        Returns:
+            List[Subset]: subsets
+        """
+
         train_loader_subsets = [plan_dataloader.train_loader]
         if train_loader_subset_count > 1:
             train_loader_dataset_size = len(plan_dataloader.train_loader.dataset)
@@ -255,7 +282,22 @@ class PlanGeneratorTrainer:
         wall_generator_optimizer: torch.optim.Optimizer,
         room_allocator_optimizer: torch.optim.Optimizer,
         train_loader: DataLoader,
-    ):
+    ) -> Tuple[float]:
+        """Function to train the model at each epoch
+
+        Args:
+            configuration (Configuration): preset configuration
+            plan_generator (PlanGenerator): model
+            wall_generator_loss_function (nn.Module): wall_generator loss function
+            room_allocator_loss_function (nn.Module): room_allocator loss function
+            wall_generator_optimizer (torch.optim.Optimizer): wall_generator optimizer
+            room_allocator_optimizer (torch.optim.Optimizer): room_allocator optimizer
+            train_loader (DataLoader): traininig dataloader
+
+        Returns:
+            Tuple[float]: training losses
+        """
+
         wall_generator_loss_sum_train = 0
         room_allocator_loss_sum_train = 0
 
@@ -298,7 +340,19 @@ class PlanGeneratorTrainer:
         wall_generator_loss_function: nn.Module,
         room_allocator_loss_function: nn.Module,
         validation_loader: DataLoader,
-    ):
+    ) -> Tuple[float]:
+        """Function to validate the model at each epoch
+
+        Args:
+            plan_generator (PlanGenerator): model
+            wall_generator_loss_function (nn.Module): wall_generator loss function
+            room_allocator_loss_function (nn.Module): room_allocator loss function
+            validation_loader (DataLoader): validation dataloader
+
+        Returns:
+            Tuple[float]: validation losses
+        """
+
         # Set mode to eval()
         plan_generator.eval()
 
@@ -345,7 +399,21 @@ class PlanGeneratorTrainer:
         floor_batch: torch.Tensor,
         generated_walls: torch.Tensor,
         allocated_rooms: torch.Tensor,
-    ) -> np.ndarray:
+    ) -> Tuple[np.ndarray]:
+        """Function that visualizes the result
+        that is compared to ground truth and generated data for qualitative evaluation
+
+        Args:
+            walls (torch.Tensor): ground truth for walls
+            rooms (torch.Tensor): ground truth for rooms
+            floor_batch (torch.Tensor): floor boundary
+            generated_walls (torch.Tensor): generated walls by the model
+            allocated_rooms (torch.Tensor): generated rooms by the model
+
+        Returns:
+            Tuple[np.ndarray]: images
+        """
+
         # Mask cells of `generated_walls` where the cells of the floor_batch are 0
         generated_walls_masked = generated_walls.clone()
         generated_walls_masked[floor_batch == 0] = 0
@@ -406,7 +474,18 @@ class PlanGeneratorTrainer:
 
     @runtime_calculator
     def sanity_check(self, index: int = 77, epochs: int = 200, visualize: bool = False) -> None:
-        """Check sanity that whether the model creates a valid result with the data one"""
+        """Check sanity that whether the model creates a valid result with a single data
+
+        Args:
+            index (int): index to train for sanity checking. Defaults to 77.
+            epochs (int): training epochs. Defaults to 200.
+            visualize (bool): whether to visualize. Defaults to False.
+
+        """
+
+        floor: torch.Tensor
+        walls: torch.Tensor
+        rooms: torch.Tensor
 
         floor, walls, rooms = self.plan_dataset[index]
 
@@ -465,6 +544,8 @@ class PlanGeneratorTrainer:
                 wall_generator_loss_final = wall_generator_loss.item()
                 room_allocator_loss_final = room_allocator_loss.item()
 
+        # If all losses are close to 0, it worked as intended
+
         status = f"""
         wall_generator_loss_final: {wall_generator_loss_final}
         room_allocator_loss_final: {room_allocator_loss_final}
@@ -473,6 +554,8 @@ class PlanGeneratorTrainer:
         print(status)
 
     def fit(self) -> None:
+        """main method to train model"""
+
         epoch_start = self.states["epoch"]
         epoch_end = self.configuration.EPOCHS + 1
 
