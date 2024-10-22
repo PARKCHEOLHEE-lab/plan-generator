@@ -72,6 +72,7 @@ class PlanGeneratorTrainer:
             self.plan_generator.module.wall_generator if self.is_multi_gpus else self.plan_generator.wall_generator,
             self.plan_generator.module.room_allocator if self.is_multi_gpus else self.plan_generator.room_allocator,
             self.configuration,
+            self.states,
         )
 
         # Set schedulers
@@ -150,7 +151,7 @@ class PlanGeneratorTrainer:
         }
 
     def _get_optimizers(
-        self, wall_generator: WallGenerator, room_allocator: RoomAllocator, configuration: Configuration
+        self, wall_generator: WallGenerator, room_allocator: RoomAllocator, configuration: Configuration, states: dict
     ) -> Tuple[torch.optim.Optimizer]:
         """Define optimizers. If the given states have optimizers' state_dict, they are overwritten.
 
@@ -158,6 +159,7 @@ class PlanGeneratorTrainer:
             wall_generator (WallGenerator): wall_generator model
             room_allocator (RoomAllocator): room_allocator model
             configuration (Configuration): preset configuration
+            states (dict): states dict
 
         Returns:
             Tuple[torch.optim.Optimizer]: optimizers
@@ -171,14 +173,14 @@ class PlanGeneratorTrainer:
             room_allocator.parameters(), lr=configuration.ROOM_ALLOCATOR_LEARNING_RATE
         )
 
-        if self.states["wall_generator_states"]["wall_generator_optimizer_state_dict"] is not None:
+        if states["wall_generator_states"]["wall_generator_optimizer_state_dict"] is not None:
             wall_generator_optimizer.load_state_dict(
-                self.states["wall_generator_states"]["wall_generator_optimizer_state_dict"]
+                states["wall_generator_states"]["wall_generator_optimizer_state_dict"]
             )
 
-        if self.states["room_allocator_states"]["room_allocator_optimizer_state_dict"] is not None:
+        if states["room_allocator_states"]["room_allocator_optimizer_state_dict"] is not None:
             room_allocator_optimizer.load_state_dict(
-                self.states["room_allocator_states"]["room_allocator_optimizer_state_dict"]
+                states["room_allocator_states"]["room_allocator_optimizer_state_dict"]
             )
 
         return wall_generator_optimizer, room_allocator_optimizer
