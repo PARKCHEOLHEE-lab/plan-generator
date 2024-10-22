@@ -156,6 +156,10 @@ class PlanDataset(Dataset):
             3: 270 degree
         """
 
+        floor: torch.Tensor
+        walls: torch.Tensor
+        rooms: torch.Tensor
+
         floor, walls, rooms = torch.load(self.dataset_paths[index])
 
         floor = floor.unsqueeze(0)
