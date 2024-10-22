@@ -65,7 +65,7 @@ class PlanGeneratorTrainer:
             self.summary_writer = self._get_summary_writer(self.configuration, self.existing_log_dir)
 
             # Set states of PlanGenerator
-            self.states = self._get_states(self.log_dir)  # FIXME
+            self.states = self._get_states(self.configuration, self.log_dir)  # FIXME
 
         # Set optimizers
         self.wall_generator_optimizer, self.room_allocator_optimizer = self._get_optimizers(
@@ -116,38 +116,53 @@ class PlanGeneratorTrainer:
 
         return summary_writer
 
-    def _get_states(self, _: str):
-        # `wall_generator`-related states
-        wall_generator_states = {
-            "wall_generator_state_dict": None,
-            "wall_generator_optimizer_state_dict": None,
-            "wall_generator_scheduler_state_dict": None,
-            "wall_generator_loss_avg_train": None,
-            "wall_generator_loss_avg_validation": None,
-        }
+    def _get_states(self, configuration: Configuration, log_dir: str) -> dict:
+        """_summary_
 
-        # `room_allocator`-related states
-        room_allocator_states = {
-            "room_allocator_state_dict": None,
-            "room_allocator_optimizer_state_dict": None,
-            "room_allocator_scheduler_state_dict": None,
-            "room_allocator_loss_avg_train": None,
-            "room_allocator_loss_avg_validation": None,
-        }
+        Args:
+            configuration (Configuration): _description_
+            log_dir (str): _description_
 
-        # states merged
-        states = {
+        Returns:
+            dict: _description_
+        """
+
+        if configuration.STATES_PT in os.listdir(log_dir):
+            return torch.load(os.path.join(log_dir, configuration.STATES_PT))
+
+        return {
             "epoch": 1,
             "configuration": self.configuration.to_dict(),
-            "wall_generator_states": wall_generator_states,
-            "room_allocator_states": room_allocator_states,
+            "wall_generator_states": {
+                "wall_generator_state_dict": None,
+                "wall_generator_optimizer_state_dict": None,
+                "wall_generator_scheduler_state_dict": None,
+                "wall_generator_loss_avg_train": None,
+                "wall_generator_loss_avg_validation": None,
+            },
+            "room_allocator_states": {
+                "room_allocator_state_dict": None,
+                "room_allocator_optimizer_state_dict": None,
+                "room_allocator_scheduler_state_dict": None,
+                "room_allocator_loss_avg_train": None,
+                "room_allocator_loss_avg_validation": None,
+            },
         }
-
-        return states
 
     def _get_optimizers(
         self, wall_generator: WallGenerator, room_allocator: RoomAllocator, configuration: Configuration
     ) -> Tuple[torch.optim.Optimizer, torch.optim.Optimizer]:
+        """_summary_
+
+        Args:
+            wall_generator (WallGenerator): _description_
+            room_allocator (RoomAllocator): _description_
+            configuration (Configuration): _description_
+
+        Returns:
+            Tuple[torch.optim.Optimizer, torch.optim.Optimizer]: _description_
+        """
+
         wall_generator_optimizer = torch.optim.Adam(
             wall_generator.parameters(), lr=configuration.WALL_GENERATOR_LEARNING_RATE
         )
@@ -155,6 +170,16 @@ class PlanGeneratorTrainer:
         room_allocator_optimizer = torch.optim.Adam(
             room_allocator.parameters(), lr=configuration.ROOM_ALLOCATOR_LEARNING_RATE
         )
+
+        if self.states["wall_generator_states"]["wall_generator_optimizer_state_dict"] is not None:
+            wall_generator_optimizer.load_state_dict(
+                self.states["wall_generator_states"]["wall_generator_optimizer_state_dict"]
+            )
+
+        if self.states["room_allocator_states"]["room_allocator_optimizer_state_dict"] is not None:
+            room_allocator_optimizer.load_state_dict(
+                self.states["room_allocator_states"]["room_allocator_optimizer_state_dict"]
+            )
 
         return wall_generator_optimizer, room_allocator_optimizer
 
@@ -511,7 +536,7 @@ class PlanGeneratorTrainer:
                 r_states["room_allocator_loss_avg_train"] = room_allocator_loss_avg_train
                 r_states["room_allocator_loss_avg_validation"] = room_allocator_loss_avg_validation
                 r_states["room_allocator_state_dict"] = room_allocator.state_dict()
-                r_states["room_allocator_optimizer_state_dict"] = self.wall_generator_optimizer.state_dict()
+                r_states["room_allocator_optimizer_state_dict"] = self.room_allocator_optimizer.state_dict()
                 r_states["room_allocator_scheduler_state_dict"] = self.room_allocator_scheduler.state_dict()
 
             # Save states if any validation losses have decreased
