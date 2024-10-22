@@ -77,7 +77,7 @@ class PlanGeneratorTrainer:
 
         # Set schedulers
         self.wall_generator_scheduler, self.room_allocator_scheduler = self._get_lr_schedulers(
-            self.wall_generator_optimizer, self.room_allocator_optimizer, self.configuration
+            self.wall_generator_optimizer, self.room_allocator_optimizer, self.configuration, self.states
         )
 
         # Set loss functions
@@ -190,6 +190,7 @@ class PlanGeneratorTrainer:
         wall_generator_optimizer: torch.optim.Optimizer,
         room_allocator_optimizer: torch.optim.Optimizer,
         configuration: Configuration,
+        states: dict,
     ) -> Tuple[ReduceLROnPlateau]:
         """Define schedulers
 
@@ -197,6 +198,7 @@ class PlanGeneratorTrainer:
             wall_generator_optimizer (torch.optim.Optimizer): wall_generator optimizer
             room_allocator_optimizer (torch.optim.Optimizer): room_allocator optimizer
             configuration (Configuration): preset configuration
+            states (dict): states dict
 
         Returns:
             Tuple[ReduceLROnPlateau]: schedulers
@@ -215,6 +217,16 @@ class PlanGeneratorTrainer:
             patience=configuration.ROOM_ALLOCATOR_LEARNING_RATE_DECAY_PATIENCE,
             verbose=True,
         )
+
+        if states["wall_generator_states"]["wall_generator_scheduler_state_dict"] is not None:
+            wall_generator_scheduler.load_state_dict(
+                states["wall_generator_states"]["wall_generator_scheduler_state_dict"]
+            )
+
+        if states["room_allocator_states"]["room_allocator_scheduler_state_dict"] is not None:
+            room_allocator_scheduler.load_state_dict(
+                states["room_allocator_states"]["room_allocator_scheduler_state_dict"]
+            )
 
         return wall_generator_scheduler, room_allocator_scheduler
 
@@ -595,6 +607,10 @@ class PlanGeneratorTrainer:
                 self.room_allocator_loss_function,
                 self.validation_loader,
             )
+
+            # Update schedulers by validation losses
+            self.wall_generator_scheduler.step(wall_generator_loss_avg_validation)
+            self.room_allocator_scheduler.step(room_allocator_loss_avg_validation)
 
             # Update states of `wall_generator` if validation loss is decreased
             is_wall_generator_improved = wall_generator_loss_avg_validation < wall_generator_current_loss
