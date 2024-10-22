@@ -388,7 +388,13 @@ class PlanGeneratorTrainer:
     #     plan_generator.eval()
 
     #     train_samples_indices = torch.randperm(len(train_loader.dataset))[:num_to_visualize]
+    #     train_samples = train_loader.dataset[train_samples_indices]
+
     #     validation_samples_indices = torch.randperm(len(validation_loader.dataset))[:num_to_visualize]
+    #     validation_samples = validation_loader.dataset[validation_samples_indices]
+
+    #     for train_sample, validation_sample in zip(train_samples, validation_samples):
+    #         pass
 
     #     plan_generator.train()
 
