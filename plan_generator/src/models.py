@@ -302,13 +302,33 @@ class PlanGenerator(nn.Module):
 
         return processed
 
-    # @torch.no_grad
-    # def infer(self, floor_batch: torch.Tensor):
-    #     self.eval()
+    @torch.no_grad
+    def infer(self, floor_batch: torch.Tensor, masking: bool = True, buffer: bool = True) -> Tuple[torch.Tensor]:
+        """_summary_
 
-    #     generated_walls = self.wall_generator(floor_batch)
-    #     allocated_rooms = self.room_allocator(generated_walls)
+        Args:
+            floor_batch (torch.Tensor): _description_
+            masking (bool, optional): _description_. Defaults to True.
+            buffer (bool, optional): _description_. Defaults to True.
 
-    #     self.train()
+        Returns:
+            Tuple[torch.Tensor]: _description_
+        """
 
-    #     return
+        self.eval()
+
+        generated_walls = self.wall_generator(floor_batch)
+        if masking:
+            generated_walls = self.mask(generated_walls, floor_batch)
+        if buffer:
+            pass
+
+        allocated_rooms = self.room_allocator(generated_walls)
+        if masking:
+            allocated_rooms = self.mask(allocated_rooms, floor_batch)
+        if buffer:
+            pass
+
+        self.train()
+
+        return generated_walls, allocated_rooms
