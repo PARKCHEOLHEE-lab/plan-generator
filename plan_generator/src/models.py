@@ -252,13 +252,8 @@ class PlanGenerator(nn.Module):
         allocated_rooms = self.room_allocator(walls_batch)
 
         if masking:
-            # Mask cells of `generated_walls` where the cells from the floor_batch are 0
-            generated_walls_masked = generated_walls.clone()
-            generated_walls_masked[floor_batch == 0] = 0
-
-            # Mask cells of `allocated_rooms` where the cells from the floor_batch are 0
-            allocated_rooms_masked = allocated_rooms.clone()
-            allocated_rooms_masked[floor_batch.expand_as(allocated_rooms) == 0] = 0
+            generated_walls_masked = self.mask(generated_walls, floor_batch)
+            allocated_rooms_masked = self.mask(allocated_rooms, floor_batch)
 
             return generated_walls_masked, allocated_rooms_masked
 
