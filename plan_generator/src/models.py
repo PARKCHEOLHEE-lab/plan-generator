@@ -264,6 +264,27 @@ class PlanGenerator(nn.Module):
 
         return generated_walls, allocated_rooms
 
+    def mask(self, generated_batch: torch.Tensor, floor_batch: torch.Tensor) -> torch.Tensor:
+        """Mask cells of `generated_batch` where the cells from the `floor_batch` are 0
+
+        Args:
+            generated_batch (torch.Tensor): image to mask
+            floor_batch (torch.Tensor): criterion for masking
+
+        Returns:
+            torch.Tensor: masked
+        """
+
+        masked = generated_batch.clone()
+
+        if generated_batch.shape != floor_batch.shape:
+            masked[floor_batch.expand_as(masked) == 0] = 0
+
+        else:
+            masked[floor_batch == 0] = 0
+
+        return masked
+
     def erode_and_dilate(self, images: List[np.ndarray], kernel_size: Optional[Tuple[int]] = None) -> List[np.ndarray]:
         """Erode and dilate a given image
 
