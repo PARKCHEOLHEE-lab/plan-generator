@@ -1,4 +1,7 @@
 import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2"
+
 import sys
 import pytz
 import torch
@@ -390,71 +393,72 @@ class PlanGeneratorTrainer:
 
         return wall_generator_loss_avg_validation, room_allocator_loss_avg_validation
 
-    # @torch.no_grad
-    # def _write(
-    #     self,
-    #     epoch: int,
-    #     configuration: Configuration,
-    #     plan_generator: PlanGenerator,
-    #     summary_writer: SummaryWriter,
-    #     train_loader: DataLoader,
-    #     validation_loader: DataLoader,
-    #     wall_generator_loss_avg_train: float,
-    #     room_allocator_loss_avg_train: float,
-    #     wall_generator_loss_avg_validation: float,
-    #     room_allocator_loss_avg_validation: float,
-    #     num_to_visualize: int = 4,
-    # ) -> None:
-    #     """_summary_
+    @torch.no_grad
+    def _write(
+        self,
+        epoch: int,
+        configuration: Configuration,
+        plan_generator: PlanGenerator,
+        summary_writer: SummaryWriter,
+        train_loader: DataLoader,
+        validation_loader: DataLoader,
+        wall_generator_loss_avg_train: float,
+        room_allocator_loss_avg_train: float,
+        wall_generator_loss_avg_validation: float,
+        room_allocator_loss_avg_validation: float,
+        num_to_visualize: int = 4,
+    ) -> None:
+        """_summary_
 
-    #     Args:
-    #         plan_generator (PlanGenerator): _description_
-    #         summary_writer (SummaryWriter): _description_
-    #         train_loader (DataLoader): _description_
-    #         validation_loader (DataLoader): _description_
-    #         wall_generator_loss_avg_train (float): _description_
-    #         room_allocator_loss_avg_train (float): _description_
-    #         wall_generator_loss_avg_validation (float): _description_
-    #         room_allocator_loss_avg_validation (float): _description_
-    #         num_to_visualize (int, optional): _description_. Defaults to 2.
-    #     """
+        Args:
+            plan_generator (PlanGenerator): _description_
+            summary_writer (SummaryWriter): _description_
+            train_loader (DataLoader): _description_
+            validation_loader (DataLoader): _description_
+            wall_generator_loss_avg_train (float): _description_
+            room_allocator_loss_avg_train (float): _description_
+            wall_generator_loss_avg_validation (float): _description_
+            room_allocator_loss_avg_validation (float): _description_
+            num_to_visualize (int, optional): _description_. Defaults to 2.
+        """
 
-    #     # Log losses
-    #     summary_writer.add_scalar("wall_generator_loss_avg_train", wall_generator_loss_avg_train, epoch)
-    #     summary_writer.add_scalar("room_allocator_loss_avg_train", room_allocator_loss_avg_train, epoch)
-    #     summary_writer.add_scalar("wall_generator_loss_avg_validation", wall_generator_loss_avg_validation, epoch)
-    #     summary_writer.add_scalar("room_allocator_loss_avg_validation", room_allocator_loss_avg_validation, epoch)
+        # Log losses
+        summary_writer.add_scalar("wall_generator_loss_avg_train", wall_generator_loss_avg_train, epoch)
+        summary_writer.add_scalar("room_allocator_loss_avg_train", room_allocator_loss_avg_train, epoch)
+        summary_writer.add_scalar("wall_generator_loss_avg_validation", wall_generator_loss_avg_validation, epoch)
+        summary_writer.add_scalar("room_allocator_loss_avg_validation", room_allocator_loss_avg_validation, epoch)
 
-    #     plan_generator.eval()
+        plan_generator.eval()
 
-    #     train_samples_indices = torch.randperm(len(train_loader.dataset))[:num_to_visualize]
-    #     train_samples = [train_loader.dataset[ti] for ti in train_samples_indices]
+        train_samples_indices = torch.randperm(len(train_loader.dataset))[:num_to_visualize]
+        train_samples = [train_loader.dataset[ti] for ti in train_samples_indices]
 
-    #     validation_samples_indices = torch.randperm(len(validation_loader.dataset))[:num_to_visualize]
-    #     validation_samples = [validation_loader.dataset[vi] for vi in validation_samples_indices]
+        validation_samples_indices = torch.randperm(len(validation_loader.dataset))[:num_to_visualize]
+        validation_samples = [validation_loader.dataset[vi] for vi in validation_samples_indices]
 
-    #     floor_batch = torch.tensor([]).to(configuration.DEVICE)
-    #     walls_batch = torch.tensor([]).to(configuration.DEVICE)
-    #     rooms_batch = torch.tensor([]).to(configuration.DEVICE)
+        floor_batch = torch.tensor([]).to(configuration.DEVICE)
+        walls_batch = torch.tensor([]).to(configuration.DEVICE)
+        rooms_batch = torch.tensor([]).to(configuration.DEVICE)
 
-    #     for train_sample, validation_sample in zip(train_samples, validation_samples):
+        for train_sample, validation_sample in zip(train_samples, validation_samples):
+            train_floor, train_walls, train_rooms = train_sample
+            validation_floor, validation_walls, validation_rooms = validation_sample
 
-    #         train_floor, train_walls, train_rooms = train_sample
-    #         validation_floor, validation_walls, validation_rooms = validation_sample
+            floor_batch = torch.cat([floor_batch, train_floor.unsqueeze(0), validation_floor.unsqueeze(0)])
+            walls_batch = torch.cat([walls_batch, train_walls.unsqueeze(0), validation_walls.unsqueeze(0)])
+            rooms_batch = torch.cat([rooms_batch, train_rooms.unsqueeze(0), validation_rooms.unsqueeze(0)])
 
-    #         floor_batch = torch.cat([floor_batch, train_floor.unsqueeze(0), validation_floor.unsqueeze(0)])
-    #         walls_batch = torch.cat([walls_batch, train_walls.unsqueeze(0), validation_walls.unsqueeze(0)])
-    #         rooms_batch = torch.cat([rooms_batch, train_rooms.unsqueeze(0), validation_rooms.unsqueeze(0)])
+        inferrer = plan_generator
+        if isinstance(plan_generator, nn.DataParallel):
+            inferrer = plan_generator.module
 
-    #     inferrer = plan_generator
-    #     if isinstance(plan_generator, nn.DataParallel):
-    #         inferrer = plan_generator.module
+        generated_walls_images, allocated_rooms_images = inferrer.infer(floor_batch)
+        # for generated_wall_image, allocated_room_image in zip(generated_walls_images, allocated_rooms_images):
+        #     pass
 
-    #     generated_walls, allocated_rooms = inferrer.infer(floor_batch)
+        # generated_walls, allocated_rooms = self.plan_generator(floor_batch, walls_batch, masking=False)
 
-    #     # generated_walls, allocated_rooms = self.plan_generator(floor_batch, walls_batch, masking=False)
-
-    #     plan_generator.train()
+        plan_generator.train()
 
     def _visualize_one(
         self,

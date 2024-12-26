@@ -4,13 +4,15 @@ import cv2
 import torch
 import numpy as np
 
+from PIL import Image
 from torch import nn
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 
 if os.path.abspath(os.path.join(__file__, "../../../")) not in sys.path:
     sys.path.append(os.path.abspath(os.path.join(__file__, "../../../")))
 
 from plan_generator.src.config import Configuration
+from plan_generator.src.enums import Colors
 
 
 class UNetDecoder(nn.Module):
@@ -303,7 +305,9 @@ class PlanGenerator(nn.Module):
         return processed
 
     @torch.no_grad
-    def infer(self, floor_batch: torch.Tensor, masking: bool = True, buffer: bool = True) -> Tuple[torch.Tensor]:
+    def infer(
+        self, floor_batch: torch.Tensor, masking: bool = True, buffer: bool = True, pil: bool = True
+    ) -> Union[Tuple[np.ndarray], Tuple[Image.Image]]:
         """_summary_
 
         Args:
@@ -318,17 +322,54 @@ class PlanGenerator(nn.Module):
         self.eval()
 
         generated_walls = self.wall_generator(floor_batch)
+        allocated_rooms = self.room_allocator(generated_walls)
+
         if masking:
             generated_walls = self.mask(generated_walls, floor_batch)
-        if buffer:
-            pass
-
-        allocated_rooms = self.room_allocator(generated_walls)
-        if masking:
             allocated_rooms = self.mask(allocated_rooms, floor_batch)
+
+        generated_walls_inferred = (generated_walls.detach().cpu().numpy() > 0.5).astype(int)
+        generated_walls_inferred = np.where(generated_walls_inferred == 0, Colors.WHITE.value[0], Colors.BLACK.value[0])
+
+        allocated_rooms_inferred = torch.argmax(allocated_rooms, dim=1)
+        allocated_rooms_inferred = allocated_rooms_inferred.detach().cpu().numpy()
+
         if buffer:
-            pass
+            generated_walls_inferred = self.erode_and_dilate(
+                generated_walls_inferred, self.configuration.WALL_EROSION_DILATION_KERNEL_SIZE
+            )
+            allocated_rooms_inferred = self.erode_and_dilate(
+                allocated_rooms_inferred, self.configuration.ROOM_EROSION_DILATION_KERNEL_SIZE
+            )
+
+        assert len(generated_walls_inferred) == len(allocated_rooms_inferred)
 
         self.train()
 
-        return generated_walls, allocated_rooms
+        if pil:
+            generated_walls_images = []
+            allocated_rooms_images = []
+            for generated_wall, allocated_room in zip(generated_walls_inferred, allocated_rooms_inferred):
+                generated_wall = generated_wall.squeeze(0)
+                generated_wall_image = Image.fromarray(generated_wall)
+
+                # Create an empty RGB image
+                allocated_room_channel_3 = np.zeros((*allocated_room.shape, 3), dtype=np.uint8)
+                allocated_room_channel_3 += Colors.WHITE.value[0]
+
+                # Map each label to its corresponding color
+                for label, color in Colors.COLOR_MAP_NEW.value.items():
+                    mask = allocated_room == label
+                    allocated_room_channel_3[:, :, 0][mask] = color[0]
+                    allocated_room_channel_3[:, :, 1][mask] = color[1]
+                    allocated_room_channel_3[:, :, 2][mask] = color[2]
+
+                allocated_room_image = Image.fromarray(allocated_room_channel_3)
+
+                generated_walls_images.append(generated_wall_image)
+                allocated_rooms_images.append(allocated_room_image)
+
+            return generated_walls_images, allocated_rooms_images
+
+        else:
+            return generated_walls_inferred, allocated_rooms_inferred
