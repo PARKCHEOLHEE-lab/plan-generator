@@ -452,11 +452,31 @@ class PlanGeneratorTrainer:
         if isinstance(plan_generator, nn.DataParallel):
             inferrer = plan_generator.module
 
-        generated_walls_images, allocated_rooms_images = inferrer.infer(floor_batch)
-        # for generated_wall_image, allocated_room_image in zip(generated_walls_images, allocated_rooms_images):
-        #     pass
+        size = 4
+        row = 2
+        col = num_to_visualize
+        fig, axes = plt.subplots(row, col * 2, figsize=(col * size, row * size / 2))
+        samples = ["train", "validation"] * num_to_visualize
 
-        # generated_walls, allocated_rooms = self.plan_generator(floor_batch, walls_batch, masking=False)
+        for ax in axes.flatten():
+            ax.axis("off")
+
+        generated_walls_images, allocated_rooms_images = inferrer.infer(floor_batch)
+        for idx, (generated_wall_image, allocated_room_image) in enumerate(
+            zip(generated_walls_images, allocated_rooms_images)
+        ):
+            axes[0][idx].imshow(generated_wall_image, cmap="gray")
+            axes[0][idx].set_title(samples[idx])
+            axes[1][idx].imshow(allocated_room_image)
+            axes[1][idx].set_title(samples[idx])
+
+        fig.canvas.draw()
+        image_from_plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        image_from_plot = image_from_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+        summary_writer.add_image("Generated Plans", image_from_plot, epoch, dataformats="HWC")
+
+        plt.close(fig)
 
         plan_generator.train()
 
