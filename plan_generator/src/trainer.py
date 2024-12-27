@@ -657,20 +657,6 @@ class PlanGeneratorTrainer:
             train_loader_subset = self.train_loader_subsets[train_loader_subset_index]
             print(f"train_loader_subset_index: {train_loader_subset_index}/{len(self.train_loader_subsets) - 1}")
 
-            # Log
-            # self._write(
-            #     epoch,
-            #     self.configuration,
-            #     self.plan_generator,
-            #     self.summary_writer,
-            #     self.train_loader,
-            #     self.validation_loader,
-            #     0,
-            #     0,
-            #     0,
-            #     0,
-            # )
-
             # Train
             wall_generator_loss_avg_train, room_allocator_loss_avg_train = self._train(
                 self.configuration,
@@ -735,6 +721,20 @@ class PlanGeneratorTrainer:
                 self.states = torch.load(os.path.join(self.log_dir, self.configuration.STATES_PT))
                 self.states["epoch"] = epoch
                 torch.save(self.states, os.path.join(self.log_dir, self.configuration.STATES_PT))
+
+            # Log
+            self._write(
+                epoch,
+                self.configuration,
+                self.plan_generator,
+                self.summary_writer,
+                self.train_loader,
+                self.validation_loader,
+                wall_generator_loss_avg_train,
+                room_allocator_loss_avg_train,
+                wall_generator_loss_avg_validation,
+                room_allocator_loss_avg_validation,
+            )
 
             clear_output(wait=True)
 
