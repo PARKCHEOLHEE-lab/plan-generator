@@ -55,7 +55,8 @@ class PlanGeneratorTrainer:
         self.is_multi_gpus = not self.sanity_checking and torch.cuda.device_count() > 1
         if self.is_multi_gpus:
             self.plan_generator = nn.DataParallel(self.plan_generator)
-            self.plan_generator = self.plan_generator.to(self.configuration.DEVICE)
+
+        self.plan_generator = self.plan_generator.to(self.configuration.DEVICE)
 
         self.plan_dataloader = PlanDataLoader(self.plan_dataset)
         self.train_loader_subsets = self._get_train_loader_subsets(train_loader_subset_count, self.plan_dataloader)
@@ -751,5 +752,7 @@ if __name__ == "__main__":
         plan_dataset=plan_dataset,
         train_loader_subset_count=20,
     )
+
+    print(f"Devices: {[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]}")
 
     plan_generator_trainer.fit()
