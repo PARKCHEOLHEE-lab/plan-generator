@@ -1,6 +1,6 @@
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,2"
 
 import sys
 import pytz
