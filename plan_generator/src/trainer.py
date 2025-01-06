@@ -39,6 +39,7 @@ class PlanGeneratorTrainer:
         existing_log_dir: Optional[str] = None,
         sanity_checking: bool = False,
         train_loader_subset_count: int = 1,
+        validation_loader_subset_count: int = 1,
     ):
         self.configuration = configuration
         self.plan_generator = plan_generator
@@ -46,6 +47,7 @@ class PlanGeneratorTrainer:
         self.existing_log_dir = existing_log_dir
         self.sanity_checking = sanity_checking
         self.train_loader_subset_count = train_loader_subset_count
+        self.validation_loader_subset_count = validation_loader_subset_count
 
         if self.sanity_checking:
             self.plan_dataset.use_transform = False
@@ -59,7 +61,12 @@ class PlanGeneratorTrainer:
         self.plan_generator = self.plan_generator.to(self.configuration.DEVICE)
 
         self.plan_dataloader = PlanDataLoader(self.plan_dataset)
-        self.train_loader_subsets = self._get_train_loader_subsets(train_loader_subset_count, self.plan_dataloader)
+        self.train_loader_subsets = self._get_dataloader_subsets(
+            train_loader_subset_count, self.plan_dataloader.train_loader
+        )
+        self.validation_loader_subsets = self._get_dataloader_subsets(
+            validation_loader_subset_count, self.plan_dataloader.validation_loader
+        )
 
         self.summary_writer = None
         self.states = None
@@ -246,50 +253,46 @@ class PlanGeneratorTrainer:
 
         return wall_generator_loss_function, room_allocator_loss_function
 
-    def _get_train_loader_subsets(
-        self, train_loader_subset_count: int, plan_dataloader: PlanDataLoader
-    ) -> List[Subset]:
-        """Divide the training dataloader to subsets with the number of `train_loader_subset_count`
+    def _get_dataloader_subsets(self, subset_count: int, dataloader: DataLoader) -> List[Subset]:
+        """Divide the dataloader to subsets with the number of `subset_count`
 
         Args:
-            train_loader_subset_count (int): count to divide
-            plan_dataloader (PlanDataLoader): dataloader
+            subset_count (int): count to divide
+            dataloader (DataLoader): dataloader
 
         Returns:
             List[Subset]: subsets
         """
 
-        train_loader_subsets = [plan_dataloader.train_loader]
-        if train_loader_subset_count > 1:
-            train_loader_dataset_size = len(plan_dataloader.train_loader.dataset)
+        dataloader_subsets = [dataloader]
+        if subset_count > 1:
+            train_loader_dataset_size = len(dataloader.dataset)
             train_loader_indices = list(range(train_loader_dataset_size))
             np.random.shuffle(train_loader_indices)
 
-            subset_divider = train_loader_dataset_size // train_loader_subset_count
-            train_loader_subsets = []
-            for subset_count in range(train_loader_subset_count):
+            subset_divider = train_loader_dataset_size // subset_count
+            dataloader_subsets = []
+            for subset_count in range(subset_count):
                 subset_start = subset_count * subset_divider
                 subset_end = (subset_count + 1) * subset_divider
 
-                if subset_count == train_loader_subset_count - 1:
+                if subset_count == subset_count - 1:
                     subset_end = train_loader_dataset_size
 
-                train_loader_subset = Subset(
-                    plan_dataloader.train_loader.dataset, train_loader_indices[subset_start:subset_end]
-                )
+                dataloader_subset = Subset(dataloader.dataset, train_loader_indices[subset_start:subset_end])
 
-                train_loader = DataLoader(
-                    dataset=train_loader_subset,
-                    batch_size=plan_dataloader.train_loader.batch_size,
+                each_dataloader = DataLoader(
+                    dataset=dataloader_subset,
+                    batch_size=dataloader.batch_size,
                     num_workers=int(os.cpu_count() * 0.7),
                     shuffle=True,
                     drop_last=True,
                     persistent_workers=True,
                 )
 
-                train_loader_subsets.append(train_loader)
+                dataloader_subsets.append(each_dataloader)
 
-        return train_loader_subsets
+        return dataloader_subsets
 
     def _train(
         self,
@@ -656,7 +659,18 @@ class PlanGeneratorTrainer:
         for epoch in range(epoch_start, epoch_end):
             train_loader_subset_index = (epoch - 1) % len(self.train_loader_subsets)
             train_loader_subset = self.train_loader_subsets[train_loader_subset_index]
-            print(f"train_loader_subset_index: {train_loader_subset_index}/{len(self.train_loader_subsets) - 1}")
+
+            validation_loader_subset_index = (epoch - 1) % len(self.validation_loader_subsets)
+            validation_loader_subset = self.validation_loader_subsets[validation_loader_subset_index]
+
+            print(
+                f"""
+                train_loader_subset_index: {train_loader_subset_index}/{len(self.train_loader_subsets) - 1}
+                validation_loader_subset_index: {
+                    validation_loader_subset_index}/{len(self.validation_loader_subsets) - 1
+                }
+                """
+            )
 
             # Train
             wall_generator_loss_avg_train, room_allocator_loss_avg_train = self._train(
@@ -674,12 +688,21 @@ class PlanGeneratorTrainer:
                 self.plan_generator,
                 self.wall_generator_loss_function,
                 self.room_allocator_loss_function,
-                self.validation_loader,
+                validation_loader_subset,
             )
 
             # Update schedulers by validation losses
             self.wall_generator_scheduler.step(wall_generator_loss_avg_validation)
             self.room_allocator_scheduler.step(room_allocator_loss_avg_validation)
+
+            print(
+                f"""
+                wall_generator_loss_avg_train: {wall_generator_loss_avg_train}
+                room_allocator_loss_avg_train: {room_allocator_loss_avg_train}
+                wall_generator_loss_avg_validation: {wall_generator_loss_avg_validation}
+                room_allocator_loss_avg_validation: {room_allocator_loss_avg_validation}
+                """
+            )
 
             # Update states of `wall_generator` if validation loss is decreased
             is_wall_generator_improved = wall_generator_loss_avg_validation < wall_generator_current_loss
@@ -751,6 +774,7 @@ if __name__ == "__main__":
         plan_generator=plan_generator,
         plan_dataset=plan_dataset,
         train_loader_subset_count=20,
+        validation_loader_subset_count=2,
     )
 
     print(f"Devices: {[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]}")
