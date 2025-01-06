@@ -2,6 +2,7 @@ import os
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
+import gc
 import sys
 import pytz
 import torch
@@ -657,6 +658,9 @@ class PlanGeneratorTrainer:
         room_allocator_loss_avg_validation = torch.inf
 
         for epoch in range(epoch_start, epoch_end):
+            torch.cuda.empty_cache()
+            gc.collect()
+
             train_loader_subset_index = (epoch - 1) % len(self.train_loader_subsets)
             train_loader_subset = self.train_loader_subsets[train_loader_subset_index]
 
