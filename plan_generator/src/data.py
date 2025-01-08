@@ -168,13 +168,13 @@ class PlanDataset(Dataset):
         rooms = rooms.unsqueeze(0)
 
         # mirroring data
-        mirroring_dimension = self.local_random.choice((0, 1, 2))
-        if self.use_transform and mirroring_dimension in (1, 2):
+        if self.use_transform:
+            mirroring_dimension = self.local_random.choice([1, 2])
             floor, walls, rooms = self.transform_mirroring((floor, walls, rooms), mirroring_dimension)
 
         # rotating data
-        rotation_multiplier = self.local_random.choice((0, 1, 2, 3))
-        if self.use_transform and rotation_multiplier in (1, 2, 3):
+        if self.use_transform:
+            rotation_multiplier = self.local_random.choice([1, 2, 3])
             floor, walls, rooms = self.transform_rotating((floor, walls, rooms), rotation_multiplier)
 
         return (
