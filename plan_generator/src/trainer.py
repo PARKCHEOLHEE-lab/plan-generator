@@ -2,7 +2,6 @@ import os
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-import gc
 import sys
 import pytz
 import torch
@@ -39,6 +38,7 @@ class PlanGeneratorTrainer:
         plan_dataset: PlanDataset,
         existing_log_dir: Optional[str] = None,
         sanity_checking: bool = False,
+        validating: bool = True,
         train_loader_subset_count: int = 1,
         validation_loader_subset_count: int = 1,
     ):
@@ -47,6 +47,7 @@ class PlanGeneratorTrainer:
         self.plan_dataset = plan_dataset
         self.existing_log_dir = existing_log_dir
         self.sanity_checking = sanity_checking
+        self.validating = validating
         self.train_loader_subset_count = train_loader_subset_count
         self.validation_loader_subset_count = validation_loader_subset_count
 
@@ -658,9 +659,6 @@ class PlanGeneratorTrainer:
         room_allocator_loss_avg_validation = torch.inf
 
         for epoch in range(epoch_start, epoch_end):
-            torch.cuda.empty_cache()
-            gc.collect()
-
             train_loader_subset_index = (epoch - 1) % len(self.train_loader_subsets)
             train_loader_subset = self.train_loader_subsets[train_loader_subset_index]
 
@@ -687,31 +685,35 @@ class PlanGeneratorTrainer:
                 train_loader_subset,
             )
 
-            # Validate
-            wall_generator_loss_avg_validation, room_allocator_loss_avg_validation = self._validate(
-                self.plan_generator,
-                self.wall_generator_loss_function,
-                self.room_allocator_loss_function,
-                validation_loader_subset,
-            )
+            if self.validating:
+                # Validate
+                wall_generator_loss_avg_validation, room_allocator_loss_avg_validation = self._validate(
+                    self.plan_generator,
+                    self.wall_generator_loss_function,
+                    self.room_allocator_loss_function,
+                    validation_loader_subset,
+                )
 
-            # Update schedulers by validation losses
-            self.wall_generator_scheduler.step(wall_generator_loss_avg_validation)
-            self.room_allocator_scheduler.step(room_allocator_loss_avg_validation)
+                self.wall_generator_scheduler.step(wall_generator_loss_avg_validation)
+                self.room_allocator_scheduler.step(room_allocator_loss_avg_validation)
 
-            print(
-                f"""
-                wall_generator_loss_avg_train: {wall_generator_loss_avg_train}
-                room_allocator_loss_avg_train: {room_allocator_loss_avg_train}
-                wall_generator_loss_avg_validation: {wall_generator_loss_avg_validation}
-                room_allocator_loss_avg_validation: {room_allocator_loss_avg_validation}
-                """
-            )
+            else:
+                self.wall_generator_scheduler.step(wall_generator_loss_avg_train)
+                self.room_allocator_scheduler.step(room_allocator_loss_avg_train)
+
+            is_wall_generator_improved = wall_generator_loss_avg_train < wall_generator_current_loss
+            is_room_allocator_improved = room_allocator_loss_avg_train < room_allocator_current_loss
+            wall_generator_current_loss = wall_generator_loss_avg_train
+            room_allocator_current_loss = room_allocator_loss_avg_train
+
+            if self.validating:
+                is_wall_generator_improved = wall_generator_loss_avg_validation < wall_generator_current_loss
+                is_room_allocator_improved = room_allocator_loss_avg_validation < room_allocator_current_loss
+                wall_generator_current_loss = wall_generator_loss_avg_validation
+                room_allocator_current_loss = room_allocator_loss_avg_validation
 
             # Update states of `wall_generator` if validation loss is decreased
-            is_wall_generator_improved = wall_generator_loss_avg_validation < wall_generator_current_loss
             if is_wall_generator_improved:
-                wall_generator_current_loss = wall_generator_loss_avg_validation
                 wall_generator = (
                     self.plan_generator.module.wall_generator
                     if self.is_multi_gpus
@@ -726,9 +728,7 @@ class PlanGeneratorTrainer:
                 w_states["wall_generator_scheduler_state_dict"] = self.wall_generator_scheduler.state_dict()
 
             # Update states of `room_allocator` if validation loss is decreased
-            is_room_allocator_improved = room_allocator_loss_avg_validation < room_allocator_current_loss
             if is_room_allocator_improved:
-                room_allocator_current_loss = room_allocator_loss_avg_validation
                 room_allocator = (
                     self.plan_generator.module.room_allocator
                     if self.is_multi_gpus
@@ -744,10 +744,21 @@ class PlanGeneratorTrainer:
 
             # Save states if any validation losses have decreased
             if is_wall_generator_improved or is_room_allocator_improved:
+                print(
+                    f"""
+                    wall_generator_loss_avg_train: {wall_generator_loss_avg_train}
+                    room_allocator_loss_avg_train: {room_allocator_loss_avg_train}
+                    wall_generator_loss_avg_validation: {wall_generator_loss_avg_validation}
+                    room_allocator_loss_avg_validation: {room_allocator_loss_avg_validation}
+                    """
+                )
+
                 torch.save(self.states, os.path.join(self.log_dir, self.configuration.STATES_PT))
+
             else:
                 self.states = torch.load(os.path.join(self.log_dir, self.configuration.STATES_PT))
                 self.states["epoch"] = epoch
+
                 torch.save(self.states, os.path.join(self.log_dir, self.configuration.STATES_PT))
 
             # Log
