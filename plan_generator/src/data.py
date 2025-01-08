@@ -129,8 +129,8 @@ class PlanDataset(Dataset):
         self.end = end
         self.use_transform = use_transform
 
-        files = os.listdir(Configuration.DATA_SAVE_DIR)[self.start : self.end]
-        self.dataset_paths = [os.path.join(Configuration.DATA_SAVE_DIR, name) for name in files]
+        files = os.listdir(self.configuration.DATA_SAVE_DIR)[self.start : self.end]
+        self.dataset_paths = [os.path.join(self.configuration.DATA_SAVE_DIR, name) for name in files]
 
         # No fixed seed
         self.local_random = random.Random()
@@ -185,42 +185,40 @@ class PlanDataset(Dataset):
 
 
 class PlanDataLoader:
-    def __init__(self, plan_dataset: PlanDataset, batch_size: int = Configuration.BATCH_SIZE):
+    def __init__(self, plan_dataset: PlanDataset, configuration: Configuration):
         self.plan_dataset = plan_dataset
-        self.batch_size = batch_size
+        self.configuration = configuration
 
         # split dataset
         self.train_dataset, self.validation_dataset, self.test_dataset = random_split(
-            self.plan_dataset, [Configuration.TRAIN_SIZE, Configuration.VALIDATION_SIZE, Configuration.TEST_SIZE]
+            self.plan_dataset,
+            [self.configuration.TRAIN_SIZE, self.configuration.VALIDATION_SIZE, self.configuration.TEST_SIZE],
         )
 
         # assign data loaders
         self.train_loader = DataLoader(
             dataset=self.train_dataset,
-            batch_size=self.batch_size,
+            batch_size=self.configuration.BATCH_SIZE,
             num_workers=int(os.cpu_count() * 0.4),
             shuffle=True,
             drop_last=True,
             persistent_workers=False,
-            pin_memory=True,
         )
 
         self.validation_loader = DataLoader(
             dataset=self.validation_dataset,
-            batch_size=self.batch_size,
+            batch_size=self.configuration.BATCH_SIZE,
             num_workers=int(os.cpu_count() * 0.2),
             shuffle=False,
             drop_last=True,
             persistent_workers=False,
-            pin_memory=True,
         )
 
         self.test_loader = DataLoader(
             dataset=self.test_dataset,
-            batch_size=self.batch_size,
+            batch_size=self.configuration.BATCH_SIZE,
             num_workers=int(os.cpu_count() * 0.1),
             shuffle=False,
             drop_last=True,
             persistent_workers=False,
-            pin_memory=True,
         )

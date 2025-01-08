@@ -62,7 +62,7 @@ class PlanGeneratorTrainer:
 
         self.plan_generator = self.plan_generator.to(self.configuration.DEVICE)
 
-        self.plan_dataloader = PlanDataLoader(self.plan_dataset)
+        self.plan_dataloader = PlanDataLoader(self.plan_dataset, self.configuration)
         self.train_loader_subsets = self._get_dataloader_subsets(
             train_loader_subset_count, self.plan_dataloader.train_loader
         )
