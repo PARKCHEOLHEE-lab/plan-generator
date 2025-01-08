@@ -123,12 +123,13 @@ class PlanDataCreator(PlanDataCreatorHelper):
 class PlanDataset(Dataset):
     """Plan dataset"""
 
-    def __init__(self, configuration: Configuration, slicer=int(1e10), use_transform: bool = True):
+    def __init__(self, configuration: Configuration, start: int = 0, end: int = int(1e10), use_transform: bool = True):
         self.configuration = configuration
-        self.slicer = slicer
+        self.start = start
+        self.end = end
         self.use_transform = use_transform
 
-        files = os.listdir(Configuration.DATA_SAVE_DIR)[: self.slicer]
+        files = os.listdir(Configuration.DATA_SAVE_DIR)[self.start : self.end]
         self.dataset_paths = [os.path.join(Configuration.DATA_SAVE_DIR, name) for name in files]
 
         # No fixed seed
