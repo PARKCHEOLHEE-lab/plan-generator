@@ -198,10 +198,11 @@ class PlanDataLoader:
         self.train_loader = DataLoader(
             dataset=self.train_dataset,
             batch_size=self.batch_size,
-            num_workers=int(os.cpu_count() * 0.7),
+            num_workers=int(os.cpu_count() * 0.4),
             shuffle=True,
             drop_last=True,
-            persistent_workers=True,
+            persistent_workers=False,
+            pin_memory=True,
         )
 
         self.validation_loader = DataLoader(
@@ -210,7 +211,8 @@ class PlanDataLoader:
             num_workers=int(os.cpu_count() * 0.2),
             shuffle=False,
             drop_last=True,
-            persistent_workers=True,
+            persistent_workers=False,
+            pin_memory=True,
         )
 
         self.test_loader = DataLoader(
@@ -219,5 +221,6 @@ class PlanDataLoader:
             num_workers=int(os.cpu_count() * 0.1),
             shuffle=False,
             drop_last=True,
-            persistent_workers=True,
+            persistent_workers=False,
+            pin_memory=True,
         )
