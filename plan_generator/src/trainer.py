@@ -781,15 +781,18 @@ class PlanGeneratorTrainer:
 if __name__ == "__main__":
     configuration = Configuration()
 
-    plan_dataset = PlanDataset(configuration=configuration)
+    configuration.TRAIN_SIZE = 1.0
+    configuration.VALIDATION_SIZE = 0.0
+    configuration.TEST_SIZE = 0.0
+
+    plan_dataset = PlanDataset(configuration=configuration, use_transform=False)
     plan_generator = PlanGenerator(configuration=configuration)
 
     plan_generator_trainer = PlanGeneratorTrainer(
         configuration=configuration,
         plan_generator=plan_generator,
         plan_dataset=plan_dataset,
-        train_loader_subset_count=20,
-        validation_loader_subset_count=2,
+        validating=False,
     )
 
     print(f"Devices: {[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]}")
