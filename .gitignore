@@ -6,3 +6,5 @@ plan_generator/runs
 plan_generator/data/dataset.rar
 
 __pycache__/
+
+*.out
