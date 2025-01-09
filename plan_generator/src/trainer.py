@@ -123,7 +123,11 @@ class PlanGeneratorTrainer:
             configuration.LOG_DIR, datetime.datetime.now(pytz.timezone("Asia/Seoul")).strftime("%m-%d-%Y__%H-%M-%S")
         )
 
-        if existing_log_dir is not None and configuration.STATES_PT in os.listdir(existing_log_dir):
+        if (
+            existing_log_dir is not None
+            and os.path.exists(existing_log_dir)
+            and configuration.STATES_PT in os.listdir(existing_log_dir)
+        ):
             log_dir = existing_log_dir
 
         summary_writer = SummaryWriter(log_dir=log_dir)
@@ -439,8 +443,15 @@ class PlanGeneratorTrainer:
         train_samples_indices = torch.randperm(len(train_loader.dataset))[:num_to_visualize]
         train_samples = [train_loader.dataset[ti] for ti in train_samples_indices]
 
-        validation_samples_indices = torch.randperm(len(validation_loader.dataset))[:num_to_visualize]
-        validation_samples = [validation_loader.dataset[vi] for vi in validation_samples_indices]
+        if self.validating:
+            validation_samples_indices = torch.randperm(len(validation_loader.dataset))[:num_to_visualize]
+            validation_samples = [validation_loader.dataset[vi] for vi in validation_samples_indices]
+            samples = ["train", "validation"] * num_to_visualize
+
+        else:
+            validation_samples_indices = torch.randperm(len(train_loader.dataset))[:num_to_visualize]
+            validation_samples = [train_loader.dataset[vi] for vi in validation_samples_indices]
+            samples = ["train", "train"] * num_to_visualize
 
         floor_batch = torch.tensor([]).to(configuration.DEVICE)
         walls_batch = torch.tensor([]).to(configuration.DEVICE)
@@ -462,7 +473,6 @@ class PlanGeneratorTrainer:
         row = 2
         col = num_to_visualize
         fig, axes = plt.subplots(row, col * 2, figsize=(col * size, row * size / 2))
-        samples = ["train", "validation"] * num_to_visualize
 
         for ax in axes.flatten():
             ax.axis("off")
@@ -666,7 +676,7 @@ class PlanGeneratorTrainer:
             validation_loader_subset = self.validation_loader_subsets[validation_loader_subset_index]
 
             print(
-                f"""
+                f"""epoch: {epoch}/{epoch_end}
                 train_loader_subset_index: {train_loader_subset_index}/{len(self.train_loader_subsets) - 1}
                 validation_loader_subset_index: {
                     validation_loader_subset_index}/{len(self.validation_loader_subsets) - 1
@@ -742,10 +752,13 @@ class PlanGeneratorTrainer:
                 r_states["room_allocator_optimizer_state_dict"] = self.room_allocator_optimizer.state_dict()
                 r_states["room_allocator_scheduler_state_dict"] = self.room_allocator_scheduler.state_dict()
 
+            # Update epoch
+            self.states["epoch"] = epoch
+
             # Save states if any validation losses have decreased
             if is_wall_generator_improved or is_room_allocator_improved:
                 print(
-                    f"""
+                    f"""losses:
                     wall_generator_loss_avg_train: {wall_generator_loss_avg_train}
                     room_allocator_loss_avg_train: {room_allocator_loss_avg_train}
                     wall_generator_loss_avg_validation: {wall_generator_loss_avg_validation}
@@ -792,6 +805,7 @@ if __name__ == "__main__":
         configuration=configuration,
         plan_generator=plan_generator,
         plan_dataset=plan_dataset,
+        existing_log_dir=os.path.abspath("plan_generator/runs/01-09-2025__14-22-52"),
         validating=False,
     )
 
