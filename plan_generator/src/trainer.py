@@ -805,7 +805,7 @@ if __name__ == "__main__":
         configuration=configuration,
         plan_generator=plan_generator,
         plan_dataset=plan_dataset,
-        existing_log_dir=os.path.abspath("plan_generator/runs/01-09-2025__14-22-52"),
+        existing_log_dir=os.path.abspath("plan_generator/runs/01-09-2025__15-49-24"),
         validating=False,
     )
 
