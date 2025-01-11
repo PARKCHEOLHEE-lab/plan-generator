@@ -80,6 +80,28 @@ class PlanGeneratorTrainer:
             # Set states of PlanGenerator
             self.states = self._get_states(self.configuration, self.log_dir)  # FIXME
 
+        # Load wall_generator weights
+        if self.states["wall_generator_states"]["wall_generator_state_dict"] is not None:
+            if self.has_multiple_gpus:
+                self.plan_generator.module.wall_generator.load_state_dict(
+                    self.states["wall_generator_states"]["wall_generator_state_dict"]
+                )
+            else:
+                self.plan_generator.wall_generator.load_state_dict(
+                    self.states["wall_generator_states"]["wall_generator_state_dict"]
+                )
+
+        # Load room_allocator weights
+        if self.states["room_allocator_states"]["room_allocator_state_dict"] is not None:
+            if self.has_multiple_gpus:
+                self.plan_generator.module.room_allocator.load_state_dict(
+                    self.states["room_allocator_states"]["room_allocator_state_dict"]
+                )
+            else:
+                self.plan_generator.room_allocator.load_state_dict(
+                    self.states["room_allocator_states"]["room_allocator_state_dict"]
+                )
+
         # Set optimizers
         self.wall_generator_optimizer, self.room_allocator_optimizer = self._get_optimizers(
             self.plan_generator.module.wall_generator if self.has_multiple_gpus else self.plan_generator.wall_generator,
@@ -123,11 +145,7 @@ class PlanGeneratorTrainer:
             configuration.LOG_DIR, datetime.datetime.now(pytz.timezone("Asia/Seoul")).strftime("%m-%d-%Y__%H-%M-%S")
         )
 
-        if (
-            existing_log_dir is not None
-            and os.path.exists(existing_log_dir)
-            and configuration.STATES_PT in os.listdir(existing_log_dir)
-        ):
+        if existing_log_dir is not None:
             log_dir = existing_log_dir
 
         summary_writer = SummaryWriter(log_dir=log_dir)
