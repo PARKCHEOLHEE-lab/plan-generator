@@ -91,6 +91,8 @@ class PlanGeneratorTrainer:
                     self.states["wall_generator_states"]["wall_generator_state_dict"]
                 )
 
+            print("wall_generator states have been loaded")
+
         # Load room_allocator weights
         if self.states["room_allocator_states"]["room_allocator_state_dict"] is not None:
             if self.has_multiple_gpus:
@@ -101,6 +103,8 @@ class PlanGeneratorTrainer:
                 self.plan_generator.room_allocator.load_state_dict(
                     self.states["room_allocator_states"]["room_allocator_state_dict"]
                 )
+
+            print("room_allocator states have been loaded")
 
         # Set optimizers
         self.wall_generator_optimizer, self.room_allocator_optimizer = self._get_optimizers(
