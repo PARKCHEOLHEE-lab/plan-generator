@@ -508,7 +508,7 @@ class PlanGeneratorTrainer:
         image_from_plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
         image_from_plot = image_from_plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
 
-        summary_writer.add_image("Generated Plans", image_from_plot, epoch, dataformats="HWC")
+        summary_writer.add_image(f"Generated Plans: {epoch}", image_from_plot, epoch, dataformats="HWC")
 
         plt.close(fig)
 
