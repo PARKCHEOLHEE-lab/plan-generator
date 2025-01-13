@@ -56,8 +56,8 @@ class ModelConfiguration:
     ROOM_ALLOCATOR_LEARNING_RATE_DECAY_PATIENCE = 5
 
     EPOCHS = 100
-    BATCH_SIZE = 16
-    GRADIENT_ACCUMULATION_STEP = 32
+    BATCH_SIZE = 8
+    GRADIENT_ACCUMULATION_STEP = 64
 
 
 class Configuration(DataConfiguration, ModelConfiguration):
