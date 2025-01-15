@@ -37,7 +37,8 @@ class PlanGeneratorTrainer:
         configuration: Configuration,
         plan_generator: PlanGenerator,
         plan_dataset: PlanDataset,
-        existing_log_dir: Optional[str] = None,
+        log_dir: Optional[str] = None,
+        pre_trained_dir: Optional[str] = None,
         sanity_checking: bool = False,
         validating: bool = True,
         train_loader_subset_count: int = 1,
@@ -46,7 +47,8 @@ class PlanGeneratorTrainer:
         self.configuration = configuration
         self.plan_generator = plan_generator
         self.plan_dataset = plan_dataset
-        self.existing_log_dir = existing_log_dir
+        self.log_dir = log_dir
+        self.pre_trained_dir = pre_trained_dir
         self.sanity_checking = sanity_checking
         self.validating = validating
         self.train_loader_subset_count = train_loader_subset_count
@@ -76,10 +78,10 @@ class PlanGeneratorTrainer:
 
         if not self.sanity_checking:
             # Set summary writer
-            self.summary_writer = self._get_summary_writer(self.configuration, self.existing_log_dir)
+            self.summary_writer = self._get_summary_writer(self.configuration, self.log_dir)
 
             # Set states of PlanGenerator
-            self.states = self._get_states(self.configuration, self.log_dir)  # FIXME
+            self.states = self._get_states(self.configuration, self.pre_trained_dir)
 
         # Load wall_generator weights
         if self.states["wall_generator_states"]["wall_generator_state_dict"] is not None:
@@ -135,12 +137,12 @@ class PlanGeneratorTrainer:
     def log_dir(self):
         return self.summary_writer.log_dir
 
-    def _get_summary_writer(self, configuration: Configuration, existing_log_dir: Union[str, None]) -> SummaryWriter:
-        """Create tensorboard SummaryWriter. If existing_log_dir is vliad, use it
+    def _get_summary_writer(self, configuration: Configuration, log_dir: Union[str, None]) -> SummaryWriter:
+        """Create tensorboard SummaryWriter. If log_dir is vliad, use it
 
         Args:
             configuration (Configuration): preset configuration
-            existing_log_dir (Union[str, None]): existing log dir created by SummaryWriter
+            log_dir (Union[str, None]): existing log dir created by SummaryWriter
 
         Returns:
             SummaryWriter: tensorboard SummaryWriter
@@ -150,26 +152,26 @@ class PlanGeneratorTrainer:
             configuration.LOG_DIR, datetime.datetime.now(pytz.timezone("Asia/Seoul")).strftime("%m-%d-%Y__%H-%M-%S")
         )
 
-        if existing_log_dir is not None:
-            log_dir = existing_log_dir
+        if log_dir is not None:
+            log_dir = log_dir
 
         summary_writer = SummaryWriter(log_dir=log_dir)
 
         return summary_writer
 
-    def _get_states(self, configuration: Configuration, log_dir: str) -> dict:
+    def _get_states(self, configuration: Configuration, pre_trained_dir: str) -> dict:
         """Define states dict
 
         Args:
             configuration (Configuration): preset configuration
-            log_dir (str): directory path for logging
+            pre_trained_dir (str): directory path for loading weights
 
         Returns:
             dict: states to store all results
         """
 
-        if configuration.STATES_PT in os.listdir(log_dir):
-            return torch.load(os.path.join(log_dir, configuration.STATES_PT))
+        if configuration.STATES_PT in os.listdir(pre_trained_dir):
+            return torch.load(os.path.join(pre_trained_dir, configuration.STATES_PT))
 
         return {
             "epoch": 1,
@@ -831,7 +833,8 @@ if __name__ == "__main__":
         configuration=configuration,
         plan_generator=plan_generator,
         plan_dataset=plan_dataset,
-        existing_log_dir=os.path.abspath("plan_generator/runs/01-09-2025__15-49-24"),
+        log_dir=os.path.abspath("plan_generator/runs/base"),
+        pre_trained_dir=os.path.abspath("plan_generator/runs/base"),
         validating=False,
     )
 
