@@ -133,10 +133,6 @@ class PlanGeneratorTrainer:
     def validation_loader(self):
         return self.plan_dataloader.validation_loader
 
-    @property
-    def log_dir(self):
-        return self.summary_writer.log_dir
-
     def _get_summary_writer(self, configuration: Configuration, log_dir: Union[str, None]) -> SummaryWriter:
         """Create tensorboard SummaryWriter. If log_dir is vliad, use it
 
@@ -794,13 +790,13 @@ class PlanGeneratorTrainer:
                     """
                 )
 
-                torch.save(self.states, os.path.join(self.log_dir, self.configuration.STATES_PT))
+                torch.save(self.states, os.path.join(self.summary_writer.log_dir, self.configuration.STATES_PT))
 
             else:
-                self.states = torch.load(os.path.join(self.log_dir, self.configuration.STATES_PT))
+                self.states = torch.load(os.path.join(self.summary_writer.log_dir, self.configuration.STATES_PT))
                 self.states["epoch"] = epoch
 
-                torch.save(self.states, os.path.join(self.log_dir, self.configuration.STATES_PT))
+                torch.save(self.states, os.path.join(self.summary_writer.log_dir, self.configuration.STATES_PT))
 
             # Log
             self._write(
