@@ -144,12 +144,12 @@ class PlanGeneratorTrainer:
             SummaryWriter: tensorboard SummaryWriter
         """
 
-        log_dir = os.path.join(
+        default_log_dir = os.path.join(
             configuration.LOG_DIR, datetime.datetime.now(pytz.timezone("Asia/Seoul")).strftime("%m-%d-%Y__%H-%M-%S")
         )
 
-        if log_dir is not None:
-            log_dir = log_dir
+        if log_dir is None:
+            log_dir = default_log_dir
 
         summary_writer = SummaryWriter(log_dir=log_dir)
 
